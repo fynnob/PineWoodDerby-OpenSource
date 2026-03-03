@@ -1,0 +1,60 @@
+Fynn Source License v1.0
+
+Copyright (c) 2026 Fynn (https://github.com/fynnob)
+Original Repository: https://github.com/fynnob/PineWoodDerby-OpenSource
+
+GRANT OF RIGHTS
+Subject to the conditions below, you are granted a non-exclusive, worldwide,
+royalty-free permission to use, copy, modify, and distribute this software
+and its source code for personal, educational, and non-commercial purposes.
+
+CONDITIONS
+
+1. ATTRIBUTION
+   Any use, distribution, or derivative work must prominently credit the
+   original author with the following notice, unchanged:
+
+     "Based on PineWoodDerby-OpenSource by Fynn — https://github.com/fynnob"
+
+   This notice must appear in the project README, documentation, and any
+   "about" screen or credits section included in the software.
+
+2. NON-COMMERCIAL
+   You may not sell this software, charge for access to it, include it in a
+   paid product or service, or use it to generate revenue in any form.
+   Hosting it at no charge for a community, school, or non-profit event is
+   explicitly permitted.
+
+3. LICENSE PRESERVATION (SHAREALIKE)
+   Any derivative work, fork, or redistribution must carry this exact license
+   text, unmodified. You may not apply a different license — or additional
+   restrictions or permissions — to this software or any work derived from it.
+
+4. SOURCE AVAILABILITY
+   If you distribute a modified version of this software to any third party,
+   you must make the full corresponding source code of your modifications
+   publicly available under this same license before or at the time of
+   distribution.
+
+5. REVOCATION
+   The copyright holder reserves the right to revoke the permissions granted
+   by this license to any individual, organization, or legal entity, at any
+   time, with or without cause, by providing written notice. Written notice
+   may be given by email, or by a public statement posted to the original
+   repository. Upon receiving notice of revocation, the affected party must
+   immediately cease all use, hosting, distribution, and modification of this
+   software and any derivative works.
+
+   Revocation of one party's rights does not affect the rights of others who
+   have not been individually notified.
+
+NO WARRANTY
+This software is provided "as is," without warranty of any kind, express or
+implied. The author is not liable for any claim, damages, or other liability
+arising from the use of this software.
+
+DEFINITIONS
+- "Derivative work" means any modification, fork, translation, port, or
+  extension of this software or any substantial portion of it.
+- "Distribution" means making the software or a derivative work available to
+  any third party by any means, including publishing online.
