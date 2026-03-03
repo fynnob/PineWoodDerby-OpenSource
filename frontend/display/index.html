@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Race Display — Pinewood Derby</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0b0d14;
+      --surface:  #131620;
+      --card:     #1a1e2e;
+      --border:   #252a3d;
+      --amber:    #f59e0b;
+      --amber-dim:#7a4e06;
+      --text:     #e8eaf2;
+      --muted:    #6b738f;
+      --gold:     #ffd700;
+      --silver:   #b8bec8;
+      --bronze:   #cd7f32;
+      --green:    #22c55e;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 40px;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .hdr-brand {
+      display: flex;
+      flex-direction: column;
+    }
+    .hdr-brand .title {
+      font-size: 1.4rem;
+      font-weight: 900;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--amber);
+      line-height: 1;
+    }
+    .hdr-brand .subtitle {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .hdr-heat {
+      text-align: center;
+      flex: 1;
+    }
+    .hdr-heat .heat-main {
+      font-size: 1.1rem;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: var(--text);
+    }
+
+    .hdr-live {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--green);
+    }
+    .live-dot {
+      width: 8px; height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      animation: blink 2s ease-in-out infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.2; }
+    }
+
+    /* ── Body ── */
+    .display-body {
+      display: grid;
+      grid-template-columns: 55% 45%;
+      overflow: hidden;
+    }
+
+    /* ── Panel shared ── */
+    .panel {
+      padding: 28px 36px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel-left { border-right: 1px solid var(--border); }
+
+    .panel-label {
+      font-size: 0.65rem;
+      font-weight: 800;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+    }
+
+    /* ── Lane rows ── */
+    .lane-rows { display: flex; flex-direction: column; gap: 12px; flex: 1; }
+
+    .lane-row {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      flex: 1;
+    }
+
+    .lane-stripe {
+      width: 6px;
+      align-self: stretch;
+      background: var(--amber);
+      flex-shrink: 0;
+    }
+    .lane-stripe.s1 { background: var(--gold); }
+    .lane-stripe.s2 { background: var(--silver); }
+    .lane-stripe.s3 { background: var(--bronze); }
+    .lane-stripe.s4 { background: #4f8ef7; }
+
+    .lane-inner {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 16px 24px;
+      flex: 1;
+    }
+
+    .ln-badge {
+      font-size: 0.7rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      white-space: nowrap;
+    }
+
+    .ln-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .ln-name {
+      font-size: 3.2rem;
+      font-weight: 900;
+      color: var(--text);
+      line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ln-num {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--amber);
+      line-height: 1;
+    }
+
+    /* ── Leaderboard rows ── */
+    .board-rows { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+
+    .board-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 20px;
+      flex: 1;
+    }
+    .board-row.pos-1 { border-left-color: var(--gold);   }
+    .board-row.pos-2 { border-left-color: var(--silver); }
+    .board-row.pos-3 { border-left-color: var(--bronze); }
+
+    .bd-rank {
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--muted);
+      min-width: 32px;
+      text-align: center;
+    }
+    .board-row.pos-1 .bd-rank { color: var(--gold); font-size: 1.3rem; }
+    .board-row.pos-2 .bd-rank { color: var(--silver); font-size: 1.3rem; }
+    .board-row.pos-3 .bd-rank { color: var(--bronze); font-size: 1.3rem; }
+
+    .bd-carnum {
+      font-size: 1.5rem;
+      font-weight: 900;
+      color: var(--amber);
+      min-width: 54px;
+      text-align: center;
+    }
+
+    .bd-name {
+      flex: 1;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .bd-pts {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* ── Empty / waiting states ── */
+    .idle-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      gap: 14px;
+      color: var(--muted);
+    }
+    .idle-state .idle-icon {
+      font-size: 4rem;
+      opacity: 0.4;
+    }
+    .idle-state p {
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: 1px;
+    }
+
+    @media (max-width: 900px) {
+      .display-body { grid-template-columns: 1fr; overflow: auto; }
+      body { overflow: auto; }
+      .ln-num  { font-size: 0.9rem !important; }
+      .ln-name { font-size: 2.2rem !important; }
+    }
+
+    /* ── Podium overlay ── */
+    .podium-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      z-index: 500;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px;
+    }
+    .podium-overlay.active { display: flex; }
+
+    .podium-title {
+      font-size: 1.2rem;
+      font-weight: 800;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+      color: var(--amber);
+      margin-bottom: 48px;
+    }
+
+    .podium-blocks {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 24px;
+      margin-bottom: 40px;
+    }
+
+    .podium-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .podium-label {
+      font-size: 1.8rem;
+      font-weight: 900;
+      opacity: 0;
+    }
+    .podium-label.revealed { opacity: 1; }
+
+    .podium-car {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+      opacity: 0;
+      min-height: 2.6em;
+    }
+    .podium-car.revealed { opacity: 1; }
+
+    .podium-pedestal {
+      width: 160px;
+      border-radius: 12px 12px 0 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3rem;
+      font-weight: 900;
+      color: rgba(255,255,255,0.3);
+    }
+    .ped-1 { height: 200px; background: linear-gradient(180deg, #ffd700 0%, #b8860b 100%); }
+    .ped-2 { height: 150px; background: linear-gradient(180deg, #c0c0c0 0%, #808080 100%); }
+    .ped-3 { height: 110px; background: linear-gradient(180deg, #cd7f32 0%, #8b4513 100%); }
+
+    .podium-rest {
+      margin-top: 32px;
+      font-size: 0.9rem;
+      color: var(--muted);
+      max-width: 600px;
+      line-height: 1.8;
+    }
+
+    /* ── Celebration / credits scroll overlay ── */
+    .celebration-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      z-index: 600;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      overflow: hidden;
+      padding: 48px 0 0;
+    }
+    .celebration-overlay.active { display: flex; }
+
+    .cel-title {
+      font-size: 1rem;
+      font-weight: 800;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+      color: var(--amber);
+      margin-bottom: 48px;
+      flex-shrink: 0;
+    }
+
+    .cel-scroll-wrap {
+      flex: 1;
+      width: 100%;
+      overflow: hidden;
+      position: relative;
+      mask-image: linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%);
+    }
+
+    .cel-scroll {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      column-gap: 40px;
+      row-gap: 28px;
+      padding: 0 48px 80px;
+      width: 100%;
+      animation: scrollCredits var(--scroll-dur, 60s) linear 1 forwards;
+    }
+
+    @keyframes scrollCredits {
+      0%   { transform: translateY(100vh); }
+      100% { transform: translateY(-100%); }
+    }
+
+    /* Top finishers & round labels span the full width */
+    .cel-entry.is-top,
+    .cel-round-header {
+      grid-column: 1 / -1;
+    }
+
+    .cel-round-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 8px;
+    }
+    .cel-round-header-line {
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .cel-round-header-label {
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--amber);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .cel-entry {
+      text-align: center;
+      line-height: 1.1;
+    }
+    .cel-entry .cel-medal { font-size: 2.4rem; margin-bottom: 4px; }
+    .cel-entry .cel-rank  { font-size: 0.75rem; font-weight: 800; letter-spacing: 3px;
+                            text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+    .cel-entry.is-top .cel-name  { font-size: 3.5rem; font-weight: 900; color: var(--text); }
+    .cel-entry.is-elim .cel-name { font-size: 2rem;   font-weight: 800; color: var(--text); }
+    .cel-entry .cel-num   { font-size: 1rem; font-weight: 700; color: var(--amber); margin-top: 4px; }
+  </style>
+  <script src="../config.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="hdr-brand">
+    <div class="title">Pinewood Derby</div>
+    <div class="subtitle">Cub Scouts Race Day</div>
+  </div>
+
+  <div class="hdr-heat">
+    <div class="heat-main" id="heatInfoText">Loading…</div>
+  </div>
+
+  <div class="hdr-live">
+    <div class="live-dot"></div>
+    Live
+  </div>
+</header>
+
+<div class="display-body">
+
+  <!-- Left: current lanes -->
+  <div class="panel panel-left">
+    <div class="panel-label">Now on Track</div>
+    <div class="lane-rows" id="laneRows">
+      <div class="idle-state">
+        <div class="idle-icon">⏳</div>
+        <p>Waiting to start</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: leaderboard -->
+  <div class="panel">
+    <div class="panel-label">Standings</div>
+    <div class="board-rows" id="boardRows">
+      <div class="idle-state">
+        <div class="idle-icon">🏆</div>
+        <p>No results yet</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Podium ceremony overlay -->
+<div class="podium-overlay" id="podiumOverlay">
+  <div class="podium-title">🏆 Final Results</div>
+
+  <div class="podium-blocks">
+    <!-- 2nd place (left) -->
+    <div class="podium-block">
+      <div class="podium-car" id="pod-car-2">—</div>
+      <div class="podium-label" id="pod-label-2" style="color:var(--silver);">🥈</div>
+      <div class="podium-pedestal ped-2">2</div>
+    </div>
+    <!-- 1st place (center, tallest) -->
+    <div class="podium-block">
+      <div class="podium-car" id="pod-car-1">—</div>
+      <div class="podium-label" id="pod-label-1" style="color:var(--gold);">🥇</div>
+      <div class="podium-pedestal ped-1">1</div>
+    </div>
+    <!-- 3rd place (right) -->
+    <div class="podium-block">
+      <div class="podium-car" id="pod-car-3">—</div>
+      <div class="podium-label" id="pod-label-3" style="color:var(--bronze);">🥉</div>
+      <div class="podium-pedestal ped-3">3</div>
+    </div>
+  </div>
+
+  <div class="podium-rest" id="podiumRest"></div>
+</div>
+
+<!-- Celebration / credits overlay -->
+<div class="celebration-overlay" id="celebrationOverlay">
+  <div class="cel-title">Thank You, Participants!</div>
+  <div class="cel-scroll-wrap">
+    <div class="cel-scroll" id="celScroll"></div>
+  </div>
+</div>
+
+<script src="../config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="../lib/api.js"></script>
+<script>
+  const sb = createClient();
+
+  // ── Refresh data ──────────────────────────────────────────────
+  async function refresh() {
+    const { data: state } = await sb
+      .from('race_state')
+      .select('current_round_id, current_heat_id, heats(heat_number, rounds(round_number))')
+      .eq('id', 1)
+      .single();
+
+    updateHeatInfo(state);
+    await Promise.all([
+      updateLanes(state?.current_heat_id ?? null),
+      updateLeaderboard(state?.current_round_id ?? null)
+    ]);
+  }
+
+  function updateHeatInfo(state) {
+    const heat  = state?.heats;
+    const round = heat?.rounds;
+    const el    = document.getElementById('heatInfoText');
+    if (heat && round) {
+      el.textContent = `Round ${round.round_number} — Heat ${heat.heat_number}`;
+    } else {
+      el.textContent = 'No active heat';
+    }
+  }
+
+  // ── Lanes panel ───────────────────────────────────────────────
+  async function updateLanes(heatId) {
+    const el = document.getElementById('laneRows');
+
+    if (!heatId) {
+      el.innerHTML = `
+        <div class="idle-state">
+          <div class="idle-icon">⏳</div>
+          <p>Waiting to start</p>
+        </div>`;
+      return;
+    }
+
+    const { data: entries } = await sb
+      .from('heat_entries')
+      .select('lane_number, cars(car_number, kid_name)')
+      .eq('heat_id', heatId)
+      .order('lane_number');
+
+    if (!entries?.length) {
+      el.innerHTML = `<div class="idle-state"><p>No lane data</p></div>`;
+      return;
+    }
+
+    const stripes = ['s1','s2','s3','s4'];
+    el.innerHTML = entries.map((e, i) => `
+      <div class="lane-row">
+        <div class="lane-stripe ${stripes[i] || ''}"></div>
+        <div class="lane-inner">
+          <div class="ln-badge">Lane ${e.lane_number}</div>
+          <div class="ln-info">
+            <div class="ln-name">${e.cars?.kid_name ?? '—'}</div>
+            <div class="ln-num">Car #${e.cars?.car_number ?? '—'}</div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // ── Leaderboard panel ─────────────────────────────────────────
+  async function updateLeaderboard(roundId) {
+    const el = document.getElementById('boardRows');
+
+    if (!roundId) {
+      el.innerHTML = `
+        <div class="idle-state">
+          <div class="idle-icon">🏆</div>
+          <p>No results yet</p>
+        </div>`;
+      return;
+    }
+
+    // Fetch results for current round
+    const { data: results } = await sb
+      .from('heat_results')
+      .select(`
+        first_place_car, second_place_car, third_place_car, fourth_place_car,
+        heats!inner(round_id)
+      `)
+      .eq('heats.round_id', roundId);
+
+    const { data: activeCars } = await sb
+      .from('cars')
+      .select('id, car_number, kid_name')
+      .eq('eliminated', false);
+
+    if (!activeCars?.length) {
+      el.innerHTML = `<div class="idle-state"><p>No active cars</p></div>`;
+      return;
+    }
+
+    // Tally points
+    const pts = {};
+    activeCars.forEach(c => pts[c.id] = 0);
+    (results || []).forEach(r => {
+      if (pts[r.first_place_car]  !== undefined) pts[r.first_place_car]  += 1;
+      if (pts[r.second_place_car] !== undefined) pts[r.second_place_car] += 2;
+      if (pts[r.third_place_car]  !== undefined) pts[r.third_place_car]  += 3;
+      if (pts[r.fourth_place_car] !== undefined) pts[r.fourth_place_car] += 4;
+    });
+
+    const sorted = activeCars
+      .map(c => ({ ...c, points: pts[c.id] ?? 0 }))
+      .filter(c => c.points > 0)  // only show cars that have raced
+      .sort((a, b) => a.points - b.points || a.car_number - b.car_number)
+      .slice(0, 6);
+
+    if (!sorted.length) {
+      el.innerHTML = `
+        <div class="idle-state">
+          <div class="idle-icon">🏆</div>
+          <p>No results yet</p>
+        </div>`;
+      return;
+    }
+
+    const rankLabel = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
+    el.innerHTML = sorted.map((car, i) => `
+      <div class="board-row pos-${i + 1}">
+        <div class="bd-rank">${rankLabel[i] ?? i + 1}</div>
+        <div class="bd-carnum">#${car.car_number}</div>
+        <div class="bd-name">${car.kid_name}</div>
+        <div class="bd-pts">${car.points} pts</div>
+      </div>
+    `).join('');
+  }
+
+  // ── Live subscription (Supabase Realtime) ─────────────────────
+  sb.channel('display-channel')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'race_state' },   refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'heat_results' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'heat_entries' }, refresh)
+    .subscribe();
+
+  // ── Podium ceremony listener ──────────────────────────────────
+  sb.channel('podium-control')
+    .on('broadcast', { event: 'podium' }, ({ payload }) => {
+      if (!payload || payload.mode !== 'podium') return;
+      handlePodium(payload);
+    })
+    .subscribe();
+
+  function handlePodium(data) {
+    if (data.mode === 'celebration') { handleCelebration(data); return; }
+
+    const overlay = document.getElementById('podiumOverlay');
+    overlay.classList.add('active');
+
+    const cars = data.cars; // sorted by rank: 1=best, 2=second, 3=third, 4+=rest
+    const step = data.step; // -1=show podium hidden, 0=reveal 3rd, 1=reveal 2nd, 2=reveal 1st
+
+    // Show 4th+ place cars at the bottom (always visible once podium starts)
+    const rest = cars.filter(c => c.rank > 3);
+    if (rest.length) {
+      document.getElementById('podiumRest').innerHTML =
+        rest.map(c => `<span style="margin:0 12px;">${c.rank}th — #${c.car_number} ${c.kid_name}</span>`).join('');
+    }
+
+    // Reset all
+    for (let i = 1; i <= 3; i++) {
+      document.getElementById('pod-label-' + i).classList.remove('revealed');
+      document.getElementById('pod-car-' + i).classList.remove('revealed');
+    }
+
+    // Fill hidden car names
+    const c1 = cars.find(c => c.rank === 1);
+    const c2 = cars.find(c => c.rank === 2);
+    const c3 = cars.find(c => c.rank === 3);
+    if (c1) document.getElementById('pod-car-1').textContent = `#${c1.car_number} ${c1.kid_name}`;
+    if (c2) document.getElementById('pod-car-2').textContent = `#${c2.car_number} ${c2.kid_name}`;
+    if (c3) document.getElementById('pod-car-3').textContent = `#${c3.car_number} ${c3.kid_name}`;
+
+    // Reveal based on step: 0 = 3rd, 1 = 2nd, 2 = 1st
+    if (step >= 0) {
+      document.getElementById('pod-label-3').classList.add('revealed');
+      document.getElementById('pod-car-3').classList.add('revealed');
+    }
+    if (step >= 1) {
+      document.getElementById('pod-label-2').classList.add('revealed');
+      document.getElementById('pod-car-2').classList.add('revealed');
+    }
+    if (step >= 2) {
+      document.getElementById('pod-label-1').classList.add('revealed');
+      document.getElementById('pod-car-1').classList.add('revealed');
+    }
+  }
+
+  function handleCelebration(data) {
+    // Hide podium, show celebration
+    document.getElementById('podiumOverlay').classList.remove('active');
+    const overlay = document.getElementById('celebrationOverlay');
+    overlay.classList.add('active');
+
+    const medals = ['🥇','🥈','🥉'];
+    const rankSuffix = n => ['st','nd','rd'][n-1] || 'th';
+
+    let html = '';
+
+    // ── Top finishers — full-width, big names ──
+    (data.topCars || []).forEach(c => {
+      const medal = medals[c.rank - 1] || '';
+      html += `
+        <div class="cel-entry is-top">
+          ${medal ? `<div class="cel-medal">${medal}</div>` : `<div class="cel-rank">${c.rank}${rankSuffix(c.rank)} Place</div>`}
+          <div class="cel-name">${c.kid_name}</div>
+          <div class="cel-num">Car #${c.car_number}</div>
+        </div>`;
+    });
+
+    // ── Eliminated cars grouped by elimination round (desc) ──
+    if (data.eliminated?.length) {
+      // Group by eliminatedRound
+      const groups = {};
+      (data.eliminated).forEach(c => {
+        const r = c.eliminatedRound ?? 0;
+        if (!groups[r]) groups[r] = [];
+        groups[r].push(c);
+      });
+
+      // Sort rounds descending (higher round = advanced further = shown first)
+      const sortedRounds = Object.keys(groups)
+        .map(Number)
+        .sort((a, b) => b - a);
+
+      sortedRounds.forEach(roundNum => {
+        // Section divider
+        const label = roundNum > 0 ? `Made it to Round ${roundNum}` : 'Also Competed';
+        html += `
+          <div class="cel-round-header">
+            <div class="cel-round-header-line"></div>
+            <div class="cel-round-header-label">${label}</div>
+            <div class="cel-round-header-line"></div>
+          </div>`;
+
+        // Sort within group by points ascending (lower = better), then car_number
+        const group = groups[roundNum].slice().sort((a, b) =>
+          (a.points ?? 999) - (b.points ?? 999) || a.car_number - b.car_number
+        );
+
+        group.forEach(c => {
+          html += `
+            <div class="cel-entry is-elim">
+              <div class="cel-name">${c.kid_name}</div>
+              <div class="cel-num">Car #${c.car_number}</div>
+            </div>`;
+        });
+      });
+    }
+
+    const totalCars = (data.topCars?.length ?? 0) + (data.eliminated?.length ?? 0);
+    const dur = Math.max(30, totalCars * 4);
+    const scroll = document.getElementById('celScroll');
+    scroll.style.setProperty('--scroll-dur', dur + 's');
+    overlay.style.setProperty('--scroll-dur', dur + 's');
+    scroll.innerHTML = html;
+    // Restart animation
+    scroll.style.animation = 'none';
+    scroll.offsetHeight; // reflow
+    scroll.style.animation = '';
+  }
+
+  // ── Init + poll fallback every 8 s ────────────────────────────
+  refresh();
+  setInterval(refresh, 8000);
+</script>
+</body>
+</html>

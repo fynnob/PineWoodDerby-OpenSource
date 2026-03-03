@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Announcer — Pinewood Derby</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <style>
+    /* ── Now-showing bar ── */
+    .now-playing {
+      background: var(--accent-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 9px 20px;
+      font-size: 0.84rem;
+      color: var(--text2);
+      position: sticky; top: 0; z-index: 50;
+    }
+    .now-playing strong { color: var(--accent); }
+
+    /* ── Tab strip ── */
+    .tab-strip {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 4px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      flex: 1; min-width: fit-content;
+      padding: 8px 10px;
+      border: none; background: transparent;
+      border-radius: var(--radius-sm);
+      font-size: 0.8rem; font-weight: 600;
+      color: var(--muted); cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
+    }
+    .tab-btn.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: var(--shadow);
+    }
+    .tab-btn:hover:not(.active) { color: var(--text2); background: rgba(0,0,0,0.04); }
+
+    /* ── Tab panels ── */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Color swatch inputs ── */
+    .color-swatch {
+      width: 100%; height: 44px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      cursor: pointer; padding: 2px;
+      background: none;
+    }
+  </style>
+  <script src="../config.js"></script>
+</head>
+<body>
+
+<!-- PIN gate -->
+<div id="pinGate" style="position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;">
+  <div style="text-align:center;max-width:300px;padding:20px;">
+    <h2 style="margin-bottom:8px;">Admin Access</h2>
+    <p style="margin-bottom:16px;">Enter the 4-digit PIN</p>
+    <input type="tel" id="pinInput" maxlength="4" placeholder="••••" autocomplete="off"
+           style="text-align:center;font-size:2rem;letter-spacing:12px;width:160px;margin:0 auto 16px;display:block;" />
+    <p id="pinErr" style="color:var(--danger);font-size:0.82rem;min-height:1.4em;"></p>
+  </div>
+</div>
+<script>
+(function(){
+  const PIN=(typeof CONFIG!=='undefined'&&CONFIG.admin_pin)||'2468',KEY='derby_admin_pin';
+  if(localStorage.getItem(KEY)===PIN){document.getElementById('pinGate').style.display='none';}
+  else{document.getElementById('pinInput').addEventListener('input',function(){if(this.value.length===4){if(this.value===PIN){localStorage.setItem(KEY,PIN);document.getElementById('pinGate').style.display='none';}else{document.getElementById('pinErr').textContent='Wrong PIN';this.value='';}}});document.getElementById('pinInput').focus();}
+})();
+</script>
+
+<nav class="top-nav">
+  <span class="brand">Derby</span>
+  <a href="index.html">Hub</a>
+  <a href="inspection.html">Inspection</a>
+  <a href="track.html">Track</a>
+  <a href="results.html">Officials</a>
+  <a href="cars.html">Cars</a>
+  <a href="announcer.html" class="active">Screen</a>
+  <a href="settings.html">⚙ Settings</a>
+</nav>
+
+<!-- Now Showing bar -->
+<div class="now-playing">
+  📺 Now showing: <strong id="nowLabel">nothing</strong>
+</div>
+
+<div class="container">
+
+
+  <!-- ── Tab strip ── -->
+  <div class="tab-strip" role="tablist">
+    <button class="tab-btn active" onclick="switchTab('quick')"   data-tab="quick">⚡ Quick</button>
+    <button class="tab-btn"        onclick="switchTab('message')" data-tab="message">💬 Message</button>
+    <button class="tab-btn"        onclick="switchTab('timer')"   data-tab="timer">⏱ Timer</button>
+    <button class="tab-btn"        onclick="switchTab('images')"  data-tab="images">🖼 Images</button>
+    <button class="tab-btn"        onclick="switchTab('live')"    data-tab="live">📊 Live</button>
+    <button class="tab-btn"        onclick="switchTab('slides')"  data-tab="slides">📽 Slides</button>
+  </div>
+
+  <!-- ════ Tab: Quick ════ -->
+  <div id="tab-quick" class="tab-panel active">
+    <div class="card">
+      <div class="card-title">Quick Slides</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <button class="btn btn-primary btn-lg"  onclick="pushSlide({type:'race'})">🏎 Race View</button>
+        <button class="btn btn-gold btn-lg"     onclick="pushSlide({type:'register'})">📱 Register QR</button>
+        <button class="btn btn-ghost btn-lg"    onclick="pushSlide({type:'scoreboard'})">📊 Scoreboard</button>
+        <button class="btn btn-ghost btn-lg"    onclick="pushSlide({type:'split'})">⬛⬛ Split View</button>
+        <button class="btn btn-ghost-danger btn-lg" style="grid-column:span 2;"
+                onclick="pushSlide({type:'idle'})">⬛ Clear Screen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ Tab: Message ════ -->
+  <div id="tab-message" class="tab-panel">
+    <div class="card">
+      <div class="card-title">Text Announcement</div>
+      <p style="font-size:0.78rem; color:var(--muted2); margin-bottom:8px;">HTML supported — use <code>&lt;br&gt;</code>, <code>&lt;img src="…"&gt;</code>, inline <code>style="…"</code>, etc.</p>
+      <textarea id="msgHeadline" placeholder="Headline… (HTML allowed)" rows="3"
+             style="width:100%; font-family:monospace; font-size:0.85rem; resize:vertical; margin-bottom:8px;"></textarea>
+      <textarea id="msgSubtitle" placeholder="Subtitle (optional, HTML allowed)" rows="2"
+             style="width:100%; font-family:monospace; font-size:0.85rem; resize:vertical; margin-bottom:12px;"></textarea>
+      <button class="btn btn-primary btn-full" onclick="pushMsg()">Show on Screen</button>
+    </div>
+    <div class="card">
+      <div class="card-title">Color Announcement</div>
+      <p style="font-size:0.82rem; color:var(--muted2); margin-bottom:14px;">Full-screen background color with custom text.</p>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+        <div>
+          <label style="display:block;font-size:0.72rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted2);margin-bottom:4px;">Background</label>
+          <input type="color" id="colorBg" value="#1a56db" class="color-swatch" />
+        </div>
+        <div>
+          <label style="display:block;font-size:0.72rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted2);margin-bottom:4px;">Text Color</label>
+          <input type="color" id="colorFg" value="#ffffff" class="color-swatch" />
+        </div>
+      </div>
+      <textarea id="colorMsg" placeholder="Headline… (HTML allowed)" rows="3"
+             style="width:100%; font-family:monospace; font-size:0.85rem; resize:vertical; margin-bottom:8px;"></textarea>
+      <textarea id="colorSub" placeholder="Subtitle (optional, HTML allowed)" rows="2"
+             style="width:100%; font-family:monospace; font-size:0.85rem; resize:vertical; margin-bottom:12px;"></textarea>
+      <button class="btn btn-primary btn-full" onclick="pushColorText()">Show on Screen</button>
+    </div>
+  </div>
+
+  <!-- ════ Tab: Timer ════ -->
+  <div id="tab-timer" class="tab-panel">
+    <div class="card">
+      <div class="card-title">Countdown Timer</div>
+      <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:12px;">
+        <div style="flex:1; text-align:center;">
+          <label style="display:block;font-size:0.72rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted2);margin-bottom:4px;">Min</label>
+          <input type="number" id="timerMins" min="0" max="99" value="3"
+                 style="width:100%; text-align:center; font-size:2rem; font-weight:900; padding:6px;" />
+        </div>
+        <div style="font-size:2.5rem; font-weight:900; padding-top:22px; color:var(--accent2);">:</div>
+        <div style="flex:1; text-align:center;">
+          <label style="display:block;font-size:0.72rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted2);margin-bottom:4px;">Sec</label>
+          <input type="number" id="timerSecs" min="0" max="59" value="0"
+                 style="width:100%; text-align:center; font-size:2rem; font-weight:900; padding:6px;" />
+        </div>
+      </div>
+      <input type="text" id="timerLabel" placeholder="Label (optional — shown below the timer)"
+             style="width:100%; margin-bottom:12px;" />
+      <button class="btn btn-gold btn-full" onclick="startTimer()">⏱ Start Countdown</button>
+      <button class="btn btn-ghost btn-full" style="margin-top:8px;" onclick="pushSlide({type:'idle'})">⏹ Stop &amp; Clear</button>
+    </div>
+    <div class="card">
+      <div class="card-title">Stopwatch</div>
+      <p style="font-size:0.82rem; color:var(--muted2); margin-bottom:16px; line-height:1.5;">
+        Counts up from zero. Displays in green on the screen.
+      </p>
+      <button class="btn btn-primary btn-full" onclick="pushSlide({type:'stopwatch'})">▶ Start Stopwatch</button>
+      <button class="btn btn-ghost btn-full" style="margin-top:8px;" onclick="pushSlide({type:'idle'})">⏹ Stop &amp; Clear</button>
+    </div>
+  </div>
+
+  <!-- ════ Tab: Images ════ -->
+  <div id="tab-images" class="tab-panel">
+    <div class="card">
+      <div class="card-title">Push Image</div>
+      <p style="font-size:0.82rem; color:var(--muted2); margin-bottom:12px;">
+        Upload an image (sponsor logo, schedule, etc.) to show fullscreen on the display.
+        Stored in the <strong>announcements</strong> Supabase bucket.
+      </p>
+      <input type="file" id="imgFile" accept="image/*" onchange="previewUploadImg(this)" style="margin-bottom:10px;" />
+      <div id="uploadPreviewWrap" style="display:none; margin-bottom:10px;">
+        <img id="uploadPreview" src="" alt="preview"
+             style="max-width:100%; max-height:200px; border-radius:10px; border:1px solid var(--border); object-fit:contain;" />
+      </div>
+      <p id="uploadErr" style="color:var(--danger); font-size:0.82rem; min-height:1.2em;"></p>
+      <button class="btn btn-gold btn-full" id="uploadImgBtn" onclick="uploadAndPush()">Upload &amp; Show</button>
+    </div>
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+        <div class="card-title" style="margin:0;">Saved Images</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadImages()">↻ Refresh</button>
+      </div>
+      <p style="font-size:0.82rem; color:var(--muted2); margin-bottom:12px;">Tap any image to push it to the screen.</p>
+      <div id="imageGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px;">
+        <span class="spinner"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ Tab: Live ════ -->
+  <div id="tab-live" class="tab-panel">
+    <div class="card">
+      <div class="card-title">📊 Live Scoreboard</div>
+      <p style="font-size:0.85rem; color:var(--muted2); margin-bottom:16px; line-height:1.5;">
+        Shows a ranked standings list pulled from the database.
+        Auto-refreshes every 10 seconds while showing.
+      </p>
+      <button class="btn btn-primary btn-full" onclick="pushSlide({type:'scoreboard'})">Show Scoreboard</button>
+      <div style="margin-top:14px;">
+        <div class="card-title" style="font-size:0.72rem; margin-bottom:8px;">Scroll Scoreboard</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <button class="btn btn-full" id="sbScrollUp"
+            style="font-size:1.4rem; padding:14px;"
+            onpointerdown="startScroll('up')" onpointerup="stopScroll()" onpointerleave="stopScroll()">&#8593;</button>
+          <button class="btn btn-full" id="sbScrollDown"
+            style="font-size:1.4rem; padding:14px;"
+            onpointerdown="startScroll('down')" onpointerup="stopScroll()" onpointerleave="stopScroll()">&#8595;</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">⬛⬛ Split View</div>
+      <p style="font-size:0.85rem; color:var(--muted2); margin-bottom:16px; line-height:1.5;">
+        Split-screen: current heat lane assignments on the left, live standings on the right.
+        Auto-refreshes every 5 seconds while showing.
+      </p>
+      <button class="btn btn-primary btn-full" onclick="pushSlide({type:'split'})">Show Split View</button>
+    </div>
+  </div>
+
+  <!-- ════ Tab: Slides ════ -->
+  <div id="tab-slides" class="tab-panel">
+    <div class="card">
+      <div class="card-title">📽 Google Slides</div>
+      <p style="font-size:0.82rem; color:var(--muted2); margin-bottom:6px; line-height:1.5;">
+        Paste the full <code>&lt;iframe&gt;</code> HTML from Google Slides
+        (<em>File → Share → Publish to web → Embed</em>), or just the <code>src="…"</code> URL.
+      </p>
+      <p style="font-size:0.78rem; color:var(--muted2); margin-bottom:14px;">
+        After showing, use the <strong>Prev / Next</strong> buttons below to navigate slides.
+      </p>
+      <textarea id="gSlidesUrl" rows="4"
+        placeholder='Paste &lt;iframe src="https://docs.google.com/…"&gt; or just the URL'
+        style="width:100%; font-size:0.78rem; font-family:monospace; resize:vertical; margin-bottom:12px;"></textarea>
+      <button class="btn btn-primary btn-full" onclick="pushGSlides()">▶ Show on Screen</button>
+      <div id="gSlidesNav" style="display:none; margin-top:16px;">
+        <div class="card-title" style="margin-bottom:10px; font-size:0.75rem;">Slide Navigation</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <button class="btn" onclick="navGSlides('prev')">&#8592; Prev Slide</button>
+          <button class="btn" onclick="navGSlides('next')">Next Slide &#8594;</button>
+        </div>
+        <div id="gSlidesCounter" style="text-align:center; font-size:0.8rem; color:var(--muted); margin-top:8px;">Slide 1</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script src="../config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="../lib/api.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+  const sb = createClient();
+
+  function toast(msg, ok = true) {
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.className = ok ? 'show ok' : 'show err';
+    setTimeout(() => el.className = '', 3000);
+  }
+
+  // ── Screen URL ────────────────────────────────────────────────
+  const screenUrl = location.href.replace('admin/announcer.html', 'display/screen.html');
+  const regUrl    = location.href.replace('admin/announcer.html', 'index.html');
+
+
+  // ── Now Showing ───────────────────────────────────────────────
+  const SLIDE_LABELS = {
+    idle: 'nothing (screen is idle)',
+    text: 'Text Announcement',
+    'color-text': 'Color Announcement',
+    image: 'Image',
+    register: 'Registration QR',
+    race: 'Race View',
+    timer: 'Countdown Timer',
+    stopwatch: 'Stopwatch',
+    scoreboard: 'Live Scoreboard',
+    split: 'Split View',
+    gslides: 'Google Slides'
+  };
+  function setNowShowing(type, detail) {
+    const label = SLIDE_LABELS[type] || type;
+    document.getElementById('nowLabel').textContent = label + (detail ? ` — ${detail}` : '');
+  }
+
+  // ── Tab switching ─────────────────────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach(p =>
+      p.classList.toggle('active', p.id === 'tab-' + name));
+    if (name === 'images') loadImages();
+  }
+
+  // ── Broadcast ─────────────────────────────────────────────────
+  const ch = sb.channel('announcer-control');
+  ch.subscribe();
+
+  async function pushSlide(payload) {
+    if (payload.type === 'register') payload.url = regUrl;
+    await ch.send({ type: 'broadcast', event: 'slide', payload });
+    setNowShowing(payload.type, payload.message || payload.label || null);
+    toast('Sent to screen!');
+  }
+
+  // ── Message tab ───────────────────────────────────────────────
+  function pushMsg() {
+    const msg = document.getElementById('msgHeadline').value.trim();
+    const sub = document.getElementById('msgSubtitle').value.trim();
+    if (!msg) { toast('Enter a headline.', false); return; }
+    pushSlide({ type: 'text', message: msg, subtitle: sub || undefined });
+  }
+
+  function pushColorText() {
+    const msg = document.getElementById('colorMsg').value.trim();
+    if (!msg) { toast('Enter a headline.', false); return; }
+    pushSlide({
+      type: 'color-text',
+      message: msg,
+      subtitle: document.getElementById('colorSub').value.trim() || undefined,
+      bg:    document.getElementById('colorBg').value,
+      color: document.getElementById('colorFg').value
+    });
+  }
+
+  // ── Timer tab ─────────────────────────────────────────────────
+  function startTimer() {
+    const mins  = parseInt(document.getElementById('timerMins').value) || 0;
+    const secs  = parseInt(document.getElementById('timerSecs').value) || 0;
+    const label = document.getElementById('timerLabel').value.trim();
+    const total = mins * 60 + secs;
+    if (total <= 0) { toast('Set a time greater than 0.', false); return; }
+    pushSlide({ type: 'timer', seconds: total, label: label || undefined });
+  }
+
+  // ── Google Slides tab ─────────────────────────────────────────
+  let _localSlidesIndex = 1;
+  function pushGSlides() {
+    let raw = document.getElementById('gSlidesUrl').value.trim();
+    if (!raw) { toast('Paste the Google Slides iframe or URL first.', false); return; }
+    // Extract src if full <iframe> HTML was pasted
+    const srcMatch = raw.match(/src="([^"]+)"/);
+    if (srcMatch) raw = srcMatch[1];
+    // Strip any existing slide param so we always start at slide 1
+    const base = raw.replace(/[&?]slide=\d+/, '');
+    _localSlidesIndex = 1;
+    pushSlide({ type: 'gslides', url: base });
+    document.getElementById('gSlidesNav').style.display = '';
+    document.getElementById('gSlidesCounter').textContent = 'Slide 1';
+  }
+  function navGSlides(dir) {
+    if (dir === 'next') _localSlidesIndex++;
+    if (dir === 'prev') _localSlidesIndex = Math.max(1, _localSlidesIndex - 1);
+    ch.send({ type: 'broadcast', event: 'slide', payload: { type: 'gslides-nav', dir } });
+    document.getElementById('gSlidesCounter').textContent = `Slide ${_localSlidesIndex}`;
+    setNowShowing('gslides', `Slide ${_localSlidesIndex}`);
+    toast('Navigated!');
+  }
+
+  // ── Scoreboard scroll ────────────────────────────────────────────────────
+  let _scrollTimer = null;
+  function startScroll(dir) {
+    sendScroll(dir);
+    _scrollTimer = setInterval(() => sendScroll(dir), 300);
+  }
+  function stopScroll() { clearInterval(_scrollTimer); _scrollTimer = null; }
+  function sendScroll(dir) {
+    ch.send({ type: 'broadcast', event: 'scroll', payload: { dir } });
+  }
+
+  // ── Image upload ──────────────────────────────────────────────
+  function previewUploadImg(input) {
+    const file = input.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('uploadPreview').src = e.target.result;
+      document.getElementById('uploadPreviewWrap').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function uploadAndPush() {
+    const fileInput = document.getElementById('imgFile');
+    const file = fileInput.files?.[0];
+    if (!file) { toast('Choose an image first.', false); return; }
+    const btn = document.getElementById('uploadImgBtn');
+    btn.disabled = true; btn.textContent = 'Uploading…';
+    document.getElementById('uploadErr').textContent = '';
+    try {
+      const ext      = file.name.split('.').pop() || 'jpg';
+      const fileName = `img_${Date.now()}.${ext}`;
+      const { error: upErr } = await sb.storage
+        .from('announcements')
+        .upload(fileName, file, { contentType: file.type, upsert: false });
+      if (upErr) {
+        const hint = upErr.message.includes('row-level security')
+          ? ' — add an anon INSERT policy to the announcements bucket in Supabase Storage.' : '';
+        throw new Error(upErr.message + hint);
+      }
+      const url = sb.storage.from('announcements').getPublicUrl(fileName).data.publicUrl;
+      await pushSlide({ type: 'image', url });
+      toast('Uploaded & showing on screen!');
+      fileInput.value = '';
+      document.getElementById('uploadPreviewWrap').style.display = 'none';
+      loadImages();
+    } catch (err) {
+      document.getElementById('uploadErr').textContent = 'Upload failed: ' + err.message;
+      toast('Upload failed.', false);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Upload & Show';
+    }
+  }
+
+  // ── Saved images ──────────────────────────────────────────────
+  async function loadImages() {
+    const grid = document.getElementById('imageGrid');
+    if (!grid) return;
+    grid.innerHTML = '<span class="spinner"></span>';
+    const { data: files, error } = await sb.storage.from('announcements').list('', {
+      limit: 100, sortBy: { column: 'created_at', order: 'desc' }
+    });
+    if (error) {
+      grid.innerHTML = `<div style="color:var(--danger); font-size:0.82rem;">
+        Could not load images: ${error.message}<br>
+        <span style="color:var(--muted2);">Ensure the <strong>announcements</strong> bucket has an anon SELECT policy.</span>
+      </div>`;
+      return;
+    }
+    const visible = (files || []).filter(f => f.name !== '.emptyFolderPlaceholder');
+    if (!visible.length) {
+      grid.innerHTML = '<div style="color:var(--muted); font-size:0.85rem;">No images yet.</div>';
+      return;
+    }
+    grid.innerHTML = visible.map(f => {
+      const url = sb.storage.from('announcements').getPublicUrl(f.name).data.publicUrl;
+      return `<div style="cursor:pointer;border-radius:8px;overflow:hidden;border:2px solid var(--border);aspect-ratio:1;"
+                   onclick="pushSlide({type:'image',url:'${url.replace(/'/g,"\\'")}'})" title="Click to show on screen">
+                <img src="${url}" loading="lazy" style="width:100%;height:100%;object-fit:cover;" />
+              </div>`;
+    }).join('');
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# Generated config (write your own via setup.py)
+config.json
+
+# Uploaded files (runtime data)
+uploads/
+
+# Database (runtime data)
+derby.db
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Node modules (if any tooling is added)
+node_modules/
+
+# VS Code
+.vscode/

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cars — Pinewood Derby</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../config.js"></script>
+</head>
+<body>
+
+<!-- PIN gate -->
+<div id="pinGate" style="position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;">
+  <div style="text-align:center;max-width:300px;padding:20px;">
+    <h2 style="margin-bottom:8px;">Admin Access</h2>
+    <p style="margin-bottom:16px;">Enter the 4-digit PIN</p>
+    <input type="tel" id="pinInput" maxlength="4" placeholder="••••" autocomplete="off"
+           style="text-align:center;font-size:2rem;letter-spacing:12px;width:160px;margin:0 auto 16px;display:block;" />
+    <p id="pinErr" style="color:var(--danger);font-size:0.82rem;min-height:1.4em;"></p>
+  </div>
+</div>
+<script>
+(function(){
+  const PIN=(typeof CONFIG!=='undefined'&&CONFIG.admin_pin)||'2468',KEY='derby_admin_pin';
+  if(localStorage.getItem(KEY)===PIN){document.getElementById('pinGate').style.display='none';}
+  else{document.getElementById('pinInput').addEventListener('input',function(){if(this.value.length===4){if(this.value===PIN){localStorage.setItem(KEY,PIN);document.getElementById('pinGate').style.display='none';}else{document.getElementById('pinErr').textContent='Wrong PIN';this.value='';}}});document.getElementById('pinInput').focus();}
+})();
+</script>
+
+<nav class="top-nav">
+  <span class="brand">Derby</span>
+  <a href="index.html">Hub</a>
+  <a href="inspection.html">Inspection</a>
+  <a href="track.html">Track</a>
+  <a href="results.html">Officials</a>
+  <a href="cars.html" class="active">Cars</a>
+  <a href="announcer.html">Screen</a>
+  <a href="settings.html">⚙ Settings</a>
+</nav>
+
+<div class="container">
+
+  <div class="card">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+      <div class="card-title" style="margin:0;">All Cars (<span id="carCount">0</span>)</div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-primary btn-sm" onclick="openAddCar()">+ Add Car</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadCars()">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="carList"><span class="spinner"></span></div>
+  </div>
+
+</div>
+
+<!-- Add Car modal -->
+<div class="confirm-overlay" id="addOverlay">
+  <div class="confirm-box" style="max-width:400px; width:100%;">
+
+    <!-- Entry form -->
+    <div id="addForm">
+      <h3 style="margin-bottom:18px;">Add Car</h3>
+
+      <label>Racer Name</label>
+      <input type="text" id="addName" autocapitalize="words" placeholder="e.g. Jamie Smith" />
+
+      <label style="margin-top:12px;">Photo <span style="font-weight:400; color:var(--muted); text-transform:none;">(recommended)</span></label>
+      <input type="file" id="addPhoto" accept="image/*" capture="environment"
+             style="margin-bottom:10px;" onchange="previewAddPhoto(this)" />
+      <div id="addPreviewWrap" style="display:none; text-align:center; margin-bottom:14px;">
+        <img id="addPreview" src="" alt="preview"
+             style="max-width:100%; max-height:200px; border-radius:10px; border:1px solid var(--border); object-fit:cover;" />
+      </div>
+
+      <p id="addErr" style="color:var(--danger); font-size:0.82rem; min-height:1.2em; margin-bottom:8px;"></p>
+
+      <div class="confirm-btns" style="margin-top:4px;">
+        <button class="btn btn-ghost btn-full" onclick="closeAddCar()">Cancel</button>
+        <button class="btn btn-primary btn-full" id="addSaveBtn" onclick="submitAddCar()">Add Car</button>
+      </div>
+    </div>
+
+    <!-- Success screen -->
+    <div id="addSuccess" style="display:none; text-align:center;">
+      <div style="font-size:2.8rem; margin-bottom:4px;">🏁</div>
+      <h3 style="margin-bottom:6px;">Car Added!</h3>
+      <div id="addSuccessNum" style="font-size:3rem; font-weight:900; color:var(--accent); line-height:1; margin-bottom:4px;"></div>
+      <div id="addSuccessName" style="font-size:1.1rem; font-weight:700; margin-bottom:16px;"></div>
+      <img id="addSuccessImg" src="" alt="" style="display:none; max-width:100%; max-height:180px; border-radius:10px; border:1px solid var(--border); object-fit:cover; margin-bottom:18px;" />
+      <div class="confirm-btns">
+        <button class="btn btn-ghost btn-full" onclick="closeAddCar()">Done</button>
+        <button class="btn btn-primary btn-full" onclick="resetAddForm()">Add Another</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit modal -->
+<div class="confirm-overlay" id="editOverlay">
+  <div class="confirm-box" style="max-width:380px;">
+    <h3 style="margin-bottom:16px;">Edit Car <span id="editNum"></span></h3>
+
+    <label>Racer Name</label>
+    <input type="text" id="editName" autocapitalize="words" />
+
+    <label>Status</label>
+    <select id="editStatus">
+      <option value="pending">⏳ Pending</option>
+      <option value="legal">✅ Legal</option>
+      <option value="not_legal">❌ Not Legal</option>
+    </select>
+
+    <label style="display:flex; align-items:center; gap:8px; text-transform:none; font-size:0.9rem; margin-bottom:16px;">
+      <input type="checkbox" id="editElim" style="width:auto; margin:0;" />
+      Eliminated from racing
+    </label>
+
+    <div class="confirm-btns">
+      <button class="btn btn-ghost btn-full" onclick="closeEdit()">Cancel</button>
+      <button class="btn btn-primary btn-full" id="saveEditBtn" onclick="saveEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirm -->
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-box">
+    <h3>Delete Car?</h3>
+    <p id="confirmMsg"></p>
+    <div class="confirm-btns">
+      <button class="btn btn-ghost btn-full" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-danger btn-full" id="confirmDeleteBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="../config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="../lib/api.js"></script>
+<script>
+  const sb = createClient();
+  let _editId   = null;
+  let _deleteId = null;
+
+  // ── Add Car ───────────────────────────────────────────────────
+  function openAddCar() {
+    resetAddForm();
+    document.getElementById('addOverlay').classList.add('open');
+    document.getElementById('addName').focus();
+  }
+
+  function closeAddCar() {
+    document.getElementById('addOverlay').classList.remove('open');
+    loadCars();
+  }
+
+  function resetAddForm() {
+    document.getElementById('addForm').style.display = 'block';
+    document.getElementById('addSuccess').style.display = 'none';
+    document.getElementById('addName').value = '';
+    document.getElementById('addPhoto').value = '';
+    document.getElementById('addPreviewWrap').style.display = 'none';
+    document.getElementById('addPreview').src = '';
+    document.getElementById('addErr').textContent = '';
+    document.getElementById('addSaveBtn').disabled = false;
+    document.getElementById('addSaveBtn').textContent = 'Add Car';
+    document.getElementById('addName').focus();
+  }
+
+  function previewAddPhoto(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('addPreview').src = e.target.result;
+      document.getElementById('addPreviewWrap').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function submitAddCar() {
+    const name = document.getElementById('addName').value.trim();
+    if (!name) { document.getElementById('addErr').textContent = 'Racer name is required.'; return; }
+
+    const btn = document.getElementById('addSaveBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    document.getElementById('addErr').textContent = '';
+
+    try {
+      // New unique device token so this admin-added car can be looked up at inspection
+      const deviceToken = crypto.randomUUID();
+      let imageUrl = null;
+
+      const photoFile = document.getElementById('addPhoto').files?.[0];
+      if (photoFile) {
+        // Insert first to get the auto-assigned id, then upload with that id as filename
+        const { data: tempCar, error: tErr } = await sb.from('cars')
+          .insert({ kid_name: name, device_token: deviceToken, legal_status: 'legal' })
+          .select().single();
+        if (tErr) throw tErr;
+
+        const ext      = photoFile.name.split('.').pop() || 'jpg';
+        const fileName = `${tempCar.id}.${ext}`;
+        const { error: upErr } = await sb.storage
+          .from('car-images')
+          .upload(fileName, photoFile, { contentType: photoFile.type, upsert: false });
+        if (!upErr) {
+          imageUrl = sb.storage.from('car-images').getPublicUrl(fileName).data.publicUrl;
+          await sb.from('cars').update({ image_url: imageUrl }).eq('id', tempCar.id);
+        }
+
+        showAddSuccess(tempCar.car_number, name, imageUrl);
+        return;
+      }
+
+      // No photo — single insert
+      const { data: car, error } = await sb.from('cars')
+        .insert({ kid_name: name, device_token: deviceToken, legal_status: 'legal' })
+        .select().single();
+      if (error) throw error;
+
+      showAddSuccess(car.car_number, name, null);
+    } catch (err) {
+      document.getElementById('addErr').textContent = 'Error: ' + err.message;
+      btn.disabled = false; btn.textContent = 'Add Car';
+    }
+  }
+
+  function showAddSuccess(carNumber, name, imageUrl) {
+    document.getElementById('addForm').style.display = 'none';
+    document.getElementById('addSuccess').style.display = 'block';
+    document.getElementById('addSuccessNum').textContent = '#' + carNumber;
+    document.getElementById('addSuccessName').textContent = name;
+    const img = document.getElementById('addSuccessImg');
+    if (imageUrl) { img.src = imageUrl; img.style.display = 'block'; }
+    else { img.style.display = 'none'; }
+  }
+
+  function toast(msg, ok = true) {
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.className = ok ? 'show ok' : 'show err';
+    setTimeout(() => el.className = '', 3000);
+  }
+
+  function statusLabel(s) {
+    return s === 'legal' ? '✅ Legal' : s === 'not_legal' ? '❌ Not Legal' : '⏳ Pending';
+  }
+
+  async function loadCars() {
+    document.getElementById('carList').innerHTML = '<span class="spinner"></span>';
+    const { data: cars, error } = await sb
+      .from('cars').select('*').order('car_number');
+    if (error) { toast('Load failed: ' + error.message, false); return; }
+
+    document.getElementById('carCount').textContent = cars.length;
+
+    if (!cars.length) {
+      document.getElementById('carList').innerHTML = '<div class="empty-state">No cars registered yet.</div>';
+      return;
+    }
+
+    document.getElementById('carList').innerHTML = cars.map(car => `
+      <div class="car-list-item" id="carrow_${car.id}">
+        <img src="${car.image_url||''}" onerror="this.style.display='none'" alt="#${car.car_number}" />
+        <div class="info" style="flex:1;">
+          <div class="num">#${car.car_number}</div>
+          <div class="name">${car.kid_name}</div>
+          <div style="margin-top:4px; display:flex; gap:6px; flex-wrap:wrap;">
+            <span class="badge badge-${car.legal_status}" id="statusBadge_${car.id}">${statusLabel(car.legal_status)}</span>
+            ${car.eliminated ? '<span class="badge badge-pending">Eliminated</span>' : ''}
+          </div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px; flex-shrink:0;">
+          <button class="btn btn-ghost btn-sm" onclick="openEdit('${car.id}','${car.car_number}','${car.kid_name.replace(/'/g,"\\'")}','${car.legal_status}',${car.eliminated})">
+            Edit
+          </button>
+          <button class="btn btn-ghost-danger btn-sm"
+                  onclick="askDelete('${car.id}', '#${car.car_number} ${car.kid_name.replace(/'/g,"\\'")}')">
+            Delete
+          </button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // ── Edit ──────────────────────────────────────────────────────
+  function openEdit(id, num, name, status, elim) {
+    _editId = id;
+    document.getElementById('editNum').textContent   = '#' + num;
+    document.getElementById('editName').value        = name;
+    document.getElementById('editStatus').value      = status;
+    document.getElementById('editElim').checked      = elim;
+    document.getElementById('editOverlay').classList.add('open');
+  }
+
+  function closeEdit() {
+    _editId = null;
+    document.getElementById('editOverlay').classList.remove('open');
+  }
+
+  async function saveEdit() {
+    const btn = document.getElementById('saveEditBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    const { error } = await sb.from('cars').update({
+      kid_name:     document.getElementById('editName').value.trim(),
+      legal_status: document.getElementById('editStatus').value,
+      eliminated:   document.getElementById('editElim').checked
+    }).eq('id', _editId);
+    btn.disabled = false; btn.textContent = 'Save';
+    if (error) { toast('Save failed: ' + error.message, false); return; }
+    toast('Saved!');
+    closeEdit();
+    loadCars();
+  }
+
+  // ── Delete ────────────────────────────────────────────────────
+  function askDelete(id, label) {
+    _deleteId = id;
+    document.getElementById('confirmMsg').textContent =
+      `Delete ${label}? This cannot be undone. The car number will not be reused.`;
+    document.getElementById('confirmOverlay').classList.add('open');
+  }
+
+  function closeConfirm() {
+    _deleteId = null;
+    document.getElementById('confirmOverlay').classList.remove('open');
+  }
+
+  document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+    if (!_deleteId) return;
+    const id = _deleteId;
+    closeConfirm();
+    const { error } = await sb.from('cars').delete().eq('id', id);
+    if (error) { toast('Delete failed: ' + error.message, false); return; }
+    document.getElementById('carrow_' + id)?.remove();
+    toast('Car deleted.');
+    loadCars();
+  });
+
+  loadCars();
+</script>
+</body>
+</html>

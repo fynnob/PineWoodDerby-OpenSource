@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Settings — Pinewood Derby</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../config.js"></script>
+</head>
+<body>
+
+<!-- PIN gate (PIN: 1357) -->
+<div id="pinGate" style="position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;">
+  <div style="text-align:center;max-width:300px;padding:20px;">
+    <h2 style="margin-bottom:8px;">Settings Access</h2>
+    <p style="margin-bottom:16px;color:var(--muted2);">Enter the Settings PIN</p>
+    <input type="tel" id="pinInput" maxlength="4" placeholder="••••" autocomplete="off"
+           style="text-align:center;font-size:2rem;letter-spacing:12px;width:160px;margin:0 auto 16px;display:block;" />
+    <p id="pinErr" style="color:var(--danger);font-size:0.82rem;min-height:1.4em;"></p>
+  </div>
+</div>
+<script>
+(function(){
+  const PIN=(typeof CONFIG!=='undefined'&&CONFIG.settings_pin)||'1357',KEY='derby_settings_pin';
+  if(localStorage.getItem(KEY)===PIN){ document.getElementById('pinGate').style.display='none'; }
+  else {
+    document.getElementById('pinInput').addEventListener('input', function() {
+      if (this.value.length === 4) {
+        if (this.value === PIN) {
+          localStorage.setItem(KEY, PIN);
+          document.getElementById('pinGate').style.display='none';
+        } else {
+          document.getElementById('pinErr').textContent = 'Wrong PIN';
+          this.value = '';
+        }
+      }
+    });
+    document.getElementById('pinInput').focus();
+  }
+})();
+</script>
+
+<nav class="top-nav">
+  <span class="brand">Derby</span>
+  <a href="index.html">Hub</a>
+  <a href="inspection.html">Inspection</a>
+  <a href="track.html">Track</a>
+  <a href="results.html">Officials</a>
+  <a href="cars.html">Cars</a>
+  <a href="announcer.html">Screen</a>
+  <a href="settings.html" class="active">⚙ Settings</a>
+</nav>
+
+<div class="container">
+
+  <div class="page-header" style="margin-top:24px;">
+    <div class="title-block">
+      <h1>Settings</h1>
+      <p>Race-day configuration options.</p>
+    </div>
+  </div>
+
+  <!-- ── Email Settings ── -->
+  <div class="card">
+    <div class="card-title">📧 Registration Emails</div>
+    <p style="font-size:0.85rem; color:var(--muted2); margin-bottom:20px; line-height:1.6;">
+      When enabled, parents who provide an email address at registration will automatically
+      receive a confirmation email with their car number and check-in QR code.
+      Turn this <strong>off</strong> before race day opens if you don't want to send emails yet,
+      and <strong>on</strong> once you're ready.
+    </p>
+
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+      <div>
+        <div style="font-weight:700; margin-bottom:4px;">Send registration emails</div>
+        <div id="emailStatusText" style="font-size:0.82rem; color:var(--muted2);">Loading…</div>
+      </div>
+      <button id="emailToggleBtn" class="btn" onclick="toggleEmail()" style="min-width:80px;" disabled>
+        …
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Deployment Notes ── -->
+  <div class="card">
+    <div class="card-title">🚀 Edge Function Setup</div>
+    <p style="font-size:0.82rem; color:var(--muted2); margin-bottom:14px; line-height:1.6;">
+      The email feature requires the <code>send-registration-email</code> Supabase Edge Function
+      to be deployed and the SMTP password to be set as a secret.
+    </p>
+    <ol style="font-size:0.82rem; color:var(--muted2); line-height:2; padding-left:20px; margin:0;">
+      <li>Install Supabase CLI: <code>npm i -g supabase</code></li>
+      <li>Login: <code>supabase login</code></li>
+      <li>Link project: <code>supabase link --project-ref fixnbthycrvegkofvzfv</code></li>
+      <li>Set secret: <code>supabase secrets set SMTP_PASSWORD=Fynnfynn2012</code></li>
+      <li>Deploy function: <code>supabase functions deploy send-registration-email</code></li>
+    </ol>
+    <p style="font-size:0.78rem; color:var(--muted); margin-top:12px; line-height:1.5;">
+      Also run the schema update in the Supabase SQL Editor to add the
+      <code>email_enabled</code> and <code>email</code> columns (see <code>schema.sql</code>).
+    </p>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script src="../config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="../lib/api.js"></script>
+<script>
+  const sb = createClient();
+
+  function toast(msg, ok = true) {
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.className = ok ? 'show ok' : 'show err';
+    clearTimeout(el._t); el._t = setTimeout(() => el.className = '', 3000);
+  }
+
+  let _emailEnabled = false;
+
+  async function loadSettings() {
+    try {
+      const { data, error } = await sb.from('race_state').select('email_enabled').eq('id', 1).single();
+      if (error) throw error;
+      _emailEnabled = data?.email_enabled ?? false;
+      renderEmailToggle();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('emailStatusText').textContent = 'Could not load — run schema update first.';
+    }
+  }
+
+  function renderEmailToggle() {
+    const btn = document.getElementById('emailToggleBtn');
+    const txt = document.getElementById('emailStatusText');
+    btn.disabled = false;
+    if (_emailEnabled) {
+      btn.textContent = 'Turn OFF';
+      btn.className = 'btn btn-danger';
+      txt.textContent = '✅ Emails are ON — parents will receive confirmation emails.';
+      txt.style.color = 'var(--green, #22c55e)';
+    } else {
+      btn.textContent = 'Turn ON';
+      btn.className = 'btn btn-primary';
+      txt.textContent = '⏸ Emails are OFF — no emails will be sent.';
+      txt.style.color = 'var(--muted2)';
+    }
+  }
+
+  async function toggleEmail() {
+    const btn = document.getElementById('emailToggleBtn');
+    btn.disabled = true;
+    const newVal = !_emailEnabled;
+    try {
+      const { error } = await sb.from('race_state').update({ email_enabled: newVal }).eq('id', 1);
+      if (error) throw error;
+      _emailEnabled = newVal;
+      renderEmailToggle();
+      toast(newVal ? 'Emails turned ON!' : 'Emails turned OFF.');
+    } catch (e) {
+      toast('Save failed: ' + e.message, false);
+      btn.disabled = false;
+    }
+  }
+
+  loadSettings();
+</script>
+</body>
+</html>

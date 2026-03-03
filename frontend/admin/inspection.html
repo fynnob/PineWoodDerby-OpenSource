@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inspection — Pinewood Derby</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <style>
+    body { background: #000; overflow: hidden; }
+
+    /* Full-screen scanner */
+    .kiosk-root { position: fixed; inset: 0; display: flex; flex-direction: column; }
+
+    .scan-area {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    .scan-area video { width: 100%; height: 100%; object-fit: cover; }
+    #reader { width: 100%; height: 100%; }
+    #reader video { width: 100% !important; height: 100% !important; object-fit: cover !important; }
+
+    /* Floating tally pill */
+    .tally-pill {
+      position: fixed;
+      top: 12px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,.75);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      padding: 6px 18px;
+      border-radius: 100px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      display: flex;
+      gap: 14px;
+      z-index: 50;
+      letter-spacing: 0.5px;
+    }
+    .tally-pill .t-g { color: #4ade80; }
+    .tally-pill .t-r { color: #f87171; }
+    .tally-pill .t-y { color: #fbbf24; }
+
+    /* Floating nav button */
+    .nav-pill {
+      position: fixed;
+      bottom: 14px; right: 14px;
+      background: rgba(0,0,0,.7);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 100px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      z-index: 50;
+      text-decoration: none;
+      letter-spacing: 0.5px;
+    }
+
+    /* Overlay slide-up panel */
+    .family-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      z-index: 200;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .family-overlay.open { display: flex; }
+
+    .family-sheet {
+      background: var(--surface);
+      border-radius: 20px 20px 0 0;
+      width: 100%;
+      max-width: 640px;
+      max-height: 80vh;
+      overflow-y: auto;
+      padding: 20px 20px 32px;
+      color: var(--text);
+    }
+
+    .family-sheet .sheet-handle {
+      width: 40px; height: 4px;
+      background: var(--border2);
+      border-radius: 4px;
+      margin: 0 auto 16px;
+    }
+
+    .fam-car {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .fam-car:last-child { border-bottom: none; }
+
+    .fam-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+    }
+    .fam-num { font-size: 1.4rem; font-weight: 900; color: var(--accent); }
+    .fam-name { font-size: 1rem; font-weight: 600; }
+
+    .fam-actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+  </style>
+  <script src="../config.js"></script>
+</head>
+<body>
+
+<!-- PIN gate -->
+<div id="pinGate" style="position:fixed;inset:0;z-index:9999;background:#000;display:flex;align-items:center;justify-content:center;">
+  <div style="text-align:center;max-width:300px;padding:20px;color:#fff;">
+    <h2 style="margin-bottom:8px;">Admin Access</h2>
+    <p style="margin-bottom:16px;color:#9ca3af;">Enter the 4-digit PIN</p>
+    <input type="tel" id="pinInput" maxlength="4" placeholder="••••" autocomplete="off"
+           style="text-align:center;font-size:2rem;letter-spacing:12px;width:160px;margin:0 auto 16px;display:block;background:#1a1e2e;border:1px solid #333;color:#fff;border-radius:10px;padding:12px;" />
+    <p id="pinErr" style="color:#f87171;font-size:0.82rem;min-height:1.4em;"></p>
+  </div>
+</div>
+<script>
+(function(){
+  const PIN=(typeof CONFIG!=='undefined'&&CONFIG.admin_pin)||'2468',KEY='derby_admin_pin';
+  if(localStorage.getItem(KEY)===PIN){document.getElementById('pinGate').style.display='none';}
+  else{document.getElementById('pinInput').addEventListener('input',function(){if(this.value.length===4){if(this.value===PIN){localStorage.setItem(KEY,PIN);document.getElementById('pinGate').style.display='none';}else{document.getElementById('pinErr').textContent='Wrong PIN';this.value='';}}});document.getElementById('pinInput').focus();}
+})();
+</script>
+
+<div class="kiosk-root">
+  <!-- Floating tally -->
+  <div class="tally-pill">
+    <span><span class="t-g" id="tallyLegal">0</span> Legal</span>
+    <span><span class="t-r" id="tallyIllegal">0</span> Not Legal</span>
+    <span><span class="t-y" id="tallyPending">0</span> Pending</span>
+  </div>
+
+  <!-- Camera fills screen -->
+  <div class="scan-area">
+    <div id="reader"></div>
+  </div>
+
+  <!-- Manual token entry -->
+  <div style="position:fixed;bottom:14px;left:14px;z-index:50;display:flex;gap:8px;">
+    <input type="text" id="tokenInput" placeholder="Code (e.g. XKDN)"
+           style="width:150px;margin:0;padding:8px 12px;font-size:0.82rem;border-radius:100px;background:rgba(0,0,0,.7);border:1px solid #444;color:#fff;backdrop-filter:blur(8px);text-transform:uppercase;letter-spacing:2px;" />
+    <button onclick="manualLookup()" style="background:rgba(0,0,0,.7);backdrop-filter:blur(8px);color:#fff;border:1px solid #444;border-radius:100px;padding:8px 14px;font-size:0.82rem;font-weight:700;cursor:pointer;">Go</button>
+  </div>
+
+  <!-- Nav back -->
+  <a href="index.html" class="nav-pill">← Hub</a>
+</div>
+
+<!-- Family overlay (slides up over camera) -->
+<div class="family-overlay" id="familyOverlay" onclick="dismissFamily()">
+  <div class="family-sheet" id="familySheet" onclick="event.stopPropagation()">
+    <div class="sheet-handle"></div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <div style="font-weight:800; font-size:1.1rem;">Family Cars</div>
+      <button class="btn btn-ghost btn-sm" onclick="dismissFamily()">Done ✕</button>
+    </div>
+    <div id="carList"></div>
+  </div>
+</div>
+
+<!-- Delete confirmation -->
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-box">
+    <h3>Delete Car?</h3>
+    <p id="confirmMsg">This cannot be undone.</p>
+    <div class="confirm-btns">
+      <button class="btn btn-ghost btn-full" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-danger btn-full" id="confirmDeleteBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="../config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="../lib/api.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+  const sb = createClient();
+
+  let lastToken   = null;
+  let lastScanAt  = 0;
+  const DEBOUNCE  = 3000;
+
+  function toast(msg, ok = true) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className   = ok ? 'show ok' : 'show err';
+    setTimeout(() => el.className = '', 3000);
+  }
+
+  // ── QR scanner (full screen, runs forever) ────────────────────
+  const scanner = new Html5Qrcode('reader');
+  scanner.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 260, height: 260 } },
+    token => {
+      const now = Date.now();
+      if (token === lastToken && now - lastScanAt < DEBOUNCE) return;
+      lastToken  = token;
+      lastScanAt = now;
+      lookupToken(token.trim());
+    },
+    () => {}
+  ).catch(err => {
+    document.getElementById('reader').innerHTML =
+      `<div style="color:#fff;padding:32px;text-align:center;">Camera unavailable — ${err.message}</div>`;
+  });
+  // ── Manual entry ───────────────────────────────────────────────
+  function manualLookup() {
+    const t = document.getElementById('tokenInput').value.trim().toUpperCase();
+    if (!t) return;
+    document.getElementById('tokenInput').value = '';
+    // 4-letter short code → resolve to full device_token first
+    if (/^[A-Z]{4}$/.test(t)) {
+      resolveShortCode(t);
+    } else {
+      lastToken = t; lastScanAt = Date.now(); lookupToken(t);
+    }
+  }
+  document.getElementById('tokenInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') manualLookup();
+  });
+
+  // Same hash function used in parent page to derive 4-letter code
+  function tokenToShortCode(token) {
+    let hash = 0;
+    for (let i = 0; i < token.length; i++) {
+      hash = ((hash << 5) - hash) + token.charCodeAt(i);
+      hash |= 0;
+    }
+    hash = Math.abs(hash);
+    const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    let code = '';
+    for (let i = 0; i < 4; i++) {
+      code += letters[hash % letters.length];
+      hash = Math.floor(hash / letters.length);
+    }
+    return code;
+  }
+
+  async function resolveShortCode(shortCode) {
+    // Fetch all distinct device_tokens, find which one hashes to this code
+    const { data, error } = await sb.from('cars').select('device_token');
+    if (error || !data?.length) { toast('No cars in database.', false); return; }
+    const unique = [...new Set(data.map(r => r.device_token))];
+    const match  = unique.find(t => tokenToShortCode(t) === shortCode);
+    if (!match) { toast(`No family found for code "${shortCode}".`, false); return; }
+    lastToken = match; lastScanAt = Date.now(); lookupToken(match);
+  }
+
+  // ── Token lookup ──────────────────────────────────────────────
+  async function lookupToken(token) {
+    const { data: cars, error } = await sb
+      .from('cars')
+      .select('*')
+      .eq('device_token', token)
+      .order('car_number');
+
+    if (error || !cars?.length) {
+      toast('No cars found for that QR.', false);
+      return;
+    }
+
+    showFamilyCars(cars);
+    loadTally();
+  }
+
+  function showFamilyCars(cars) {
+    document.getElementById('carList').innerHTML = cars.map(car => `
+      <div class="fam-car" id="row_${car.id}">
+        <div class="fam-info">
+          <div class="fam-num">#${car.car_number}</div>
+          <div class="fam-name">${car.kid_name}</div>
+          <span class="badge badge-${car.legal_status}" id="badge_${car.id}">${statusLabel(car.legal_status)}</span>
+        </div>
+        <div class="fam-actions">
+          <button class="insp-toggle-btn legal ${car.legal_status === 'legal' ? 'active' : ''}"
+                  id="legal_${car.id}"
+                  onclick="setStatus('${car.id}', 'legal')">✓</button>
+          <button class="insp-toggle-btn illegal ${car.legal_status === 'not_legal' ? 'active' : ''}"
+                  id="illegal_${car.id}"
+                  onclick="setStatus('${car.id}', 'not_legal')">✗</button>
+          <button class="btn btn-ghost-danger btn-sm" style="min-height:40px; padding:0 10px; font-size:0.75rem;"
+                  onclick="askDelete('${car.id}', '#${car.car_number} ${car.kid_name}')">Del</button>
+        </div>
+      </div>
+    `).join('');
+
+    document.getElementById('familyOverlay').classList.add('open');
+  }
+
+  function dismissFamily() {
+    document.getElementById('familyOverlay').classList.remove('open');
+    lastToken = null; lastScanAt = 0;
+  }
+
+  function statusLabel(s) {
+    return s === 'legal' ? '✅ Legal' : s === 'not_legal' ? '❌ Not Legal' : '⏳ Pending';
+  }
+
+  function applyStatusUI(carId, status) {
+    const badge = document.getElementById('badge_' + carId);
+    if (badge) { badge.className = `badge badge-${status}`; badge.textContent = statusLabel(status); }
+    const lBtn = document.getElementById('legal_'   + carId);
+    const iBtn = document.getElementById('illegal_' + carId);
+    if (lBtn) lBtn.classList.toggle('active', status === 'legal');
+    if (iBtn) iBtn.classList.toggle('active', status === 'not_legal');
+  }
+
+  async function setStatus(carId, status) {
+    const { error } = await sb.from('cars').update({ legal_status: status }).eq('id', carId);
+    if (error) { toast('Update failed: ' + error.message, false); return; }
+    applyStatusUI(carId, status);
+    toast(status === 'legal' ? '✅ Legal' : '❌ Not Legal');
+    loadTally();
+  }
+
+  // ── Delete ────────────────────────────────────────────────────
+  let _pendingDeleteId = null;
+
+  function askDelete(carId, label) {
+    _pendingDeleteId = carId;
+    document.getElementById('confirmMsg').textContent = `Delete ${label}?`;
+    document.getElementById('confirmOverlay').classList.add('open');
+  }
+
+  function closeConfirm() {
+    _pendingDeleteId = null;
+    document.getElementById('confirmOverlay').classList.remove('open');
+  }
+
+  document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+    if (!_pendingDeleteId) return;
+    const id = _pendingDeleteId;
+    closeConfirm();
+    const { error } = await sb.from('cars').delete().eq('id', id);
+    if (error) { toast('Delete failed: ' + error.message, false); return; }
+    const row = document.getElementById('row_' + id);
+    if (row) row.remove();
+    toast('Deleted.');
+    loadTally();
+  });
+
+  // ── Realtime ──────────────────────────────────────────────────
+  sb.channel('insp-cars')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cars' }, payload => {
+      applyStatusUI(payload.new.id, payload.new.legal_status);
+      loadTally();
+    })
+    .subscribe();
+
+  async function loadTally() {
+    const { data } = await sb.from('cars').select('legal_status');
+    if (!data) return;
+    document.getElementById('tallyLegal').textContent   = data.filter(c => c.legal_status === 'legal').length;
+    document.getElementById('tallyIllegal').textContent = data.filter(c => c.legal_status === 'not_legal').length;
+    document.getElementById('tallyPending').textContent = data.filter(c => c.legal_status === 'pending').length;
+  }
+
+  loadTally();
+</script>
+</body>
+</html>

@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Derby Screen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:     #0b0d14;
+      --card:   #1a1e2e;
+      --border: #252a3d;
+      --amber:  #f59e0b;
+      --text:   #e8eaf2;
+      --muted:  #6b738f;
+      --gold:   #ffd700;
+      --silver: #b8bec8;
+      --bronze: #cd7f32;
+      --green:  #22c55e;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      width: 100vw; height: 100vh;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── Slides ── */
+    #slide {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 60px; text-align: center;
+      animation: fadeIn 0.4s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    .idle-msg {
+      font-size: 1.2rem; font-weight: 700; letter-spacing: 3px;
+      text-transform: uppercase; color: var(--muted);
+    }
+
+    /* ── Text slide ── */
+    .slide-headline { font-size: clamp(3rem, 8vw, 7rem); font-weight: 900; line-height: 1.1; max-width: 1400px; }
+    .slide-subtitle { font-size: clamp(1.2rem, 2.5vw, 2.2rem); font-weight: 600; color: var(--muted); margin-top: 20px; max-width: 1200px; line-height: 1.4; }
+
+    /* ── Color-text slide ── */
+    .slide-color-bg {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 80px; text-align: center;
+    }
+
+    /* ── Image slide ── */
+    .slide-image {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .slide-image img { width: 100vw; height: 100vh; object-fit: cover; object-position: center; }
+
+    /* ── Registration slide ── */
+    .reg-title   { font-size: 3.5rem; font-weight: 900; color: var(--amber); margin-bottom: 12px; }
+    .reg-step    { font-size: 1.35rem; color: var(--muted); margin-bottom: 32px; max-width: 700px; line-height: 1.5; }
+    .reg-qr-wrap { background: #fff; border-radius: 20px; padding: 22px; display: inline-block; margin-bottom: 20px; }
+    .reg-url     { font-size: 1.4rem; font-weight: 800; letter-spacing: 2px; color: var(--text); }
+
+    /* ── Timer slide ── */
+    .slide-timer {
+      font-size: clamp(8rem, 22vw, 18rem);
+      font-weight: 900; letter-spacing: -4px;
+      font-variant-numeric: tabular-nums; line-height: 1; color: var(--text);
+    }
+    .slide-timer.done { color: var(--amber); animation: pulseDone 1.2s ease-in-out infinite; }
+    @keyframes pulseDone { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+    .timer-colon { color: var(--amber); display: inline-block; animation: colonBlink 1s step-end infinite; }
+    @keyframes colonBlink { 50% { opacity: 0.2; } }
+    .timer-label { font-size: 1.1rem; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; color: var(--muted); margin-top: 16px; }
+
+    /* ── Stopwatch slide ── */
+    .slide-stopwatch {
+      font-size: clamp(8rem, 22vw, 18rem);
+      font-weight: 900; letter-spacing: -4px;
+      font-variant-numeric: tabular-nums; line-height: 1; color: var(--green);
+    }
+    .stopwatch-colon { display: inline-block; animation: colonBlink 1s step-end infinite; }
+
+    /* ── Scoreboard slide ── */
+    .scoreboard-slide { width: 100%; max-width: 860px; max-height: calc(100vh - 120px); display: flex; flex-direction: column; }
+    .sb-header { font-size: 0.75rem; font-weight: 900; letter-spacing: 5px; text-transform: uppercase; color: var(--amber); margin-bottom: 28px; }
+    .sb-rows { display: flex; flex-direction: column; gap: 12px; flex: 1; overflow-y: auto; scroll-behavior: smooth; scrollbar-width: none; }
+    .sb-rows::-webkit-scrollbar { display: none; }
+    .sb-row {
+      display: grid; grid-template-columns: 56px 1fr auto;
+      align-items: center; gap: 20px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 14px 22px;
+    }
+    .sb-row.rank-1 { border-color: var(--gold);   background: rgba(255,215,0,0.06); }
+    .sb-row.rank-2 { border-color: var(--silver); background: rgba(184,190,200,0.06); }
+    .sb-row.rank-3 { border-color: var(--bronze); background: rgba(205,127,50,0.06); }
+    .sb-rank { font-size: 1.6rem; font-weight: 900; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .sb-row.rank-1 .sb-rank { color: var(--gold); }
+    .sb-row.rank-2 .sb-rank { color: var(--silver); }
+    .sb-row.rank-3 .sb-rank { color: var(--bronze); }
+    .sb-name { font-size: 2rem; font-weight: 800; text-align: left; }
+    .sb-pts  { font-size: 1rem; font-weight: 700; color: var(--amber); white-space: nowrap; }
+    .sb-carno { font-size: 0.75rem; font-weight: 600; color: var(--muted); display: block; margin-top: 2px; }
+
+    /* ── Split slide ── */
+    .split-slide {
+      position: fixed; inset: 0;
+      display: grid; grid-template-columns: 1fr 1fr;
+    }
+    .split-panel { display: flex; flex-direction: column; padding: 24px 28px; overflow: hidden; }
+    .split-panel:first-child { border-right: 1px solid var(--border); }
+    .split-panel-label { font-size: 0.7rem; font-weight: 900; letter-spacing: 5px; text-transform: uppercase; color: var(--amber); margin-bottom: 16px; flex-shrink: 0; }
+    .split-panel-rows  { display: flex; flex-direction: column; gap: clamp(6px, 1.2vh, 14px); overflow: hidden; flex: 1; }
+    .sp-lane-row {
+      display: grid; grid-template-columns: 56px 1fr;
+      align-items: center; gap: 16px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px 20px;
+      flex: 1;
+    }
+    .sp-lane-num  { font-size: clamp(1.2rem, 2.2vw, 2.2rem); font-weight: 900; color: var(--muted); text-align: center; }
+    .sp-lane-name { font-size: clamp(2rem, 3.2vw, 3.4rem); font-weight: 800; }
+    .sp-lane-car  { font-size: clamp(0.8rem, 1.1vw, 1.1rem); color: var(--amber); font-weight: 600; }
+    .sp-sb-row {
+      display: grid; grid-template-columns: 44px 1fr auto;
+      align-items: center; gap: 12px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 18px;
+      flex: 1;
+    }
+    .sp-sb-row.rank-1 { border-color: var(--gold); }
+    .sp-sb-row.rank-2 { border-color: var(--silver); }
+    .sp-sb-row.rank-3 { border-color: var(--bronze); }
+    .sp-rank { font-size: clamp(1rem, 1.4vw, 1.4rem); font-weight: 900; color: var(--muted); text-align: center; }
+    .sp-sb-row.rank-1 .sp-rank { color: var(--gold); }
+    .sp-sb-row.rank-2 .sp-rank { color: var(--silver); }
+    .sp-sb-row.rank-3 .sp-rank { color: var(--bronze); }
+    .sp-name { font-size: clamp(1.4rem, 2vw, 2.2rem); font-weight: 800; text-align: left; }
+    .sp-pts  { font-size: clamp(0.8rem, 1vw, 1rem); font-weight: 700; color: var(--amber); }
+
+    /* ── Idle ── */
+    .idle-msg { font-size: 1.3rem; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; color: var(--muted); }
+    .idle-sub { font-size: 0.75rem; font-weight: 500; letter-spacing: 2px; text-transform: uppercase; color: var(--border); margin-top: 14px; }
+
+    /* ── Fullscreen button ── */
+    #fsBtn {
+      position: fixed; bottom: 18px; right: 18px; z-index: 998;
+      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+      color: #fff; border-radius: 8px; padding: 7px 10px;
+      font-size: 1.1rem; line-height: 1; cursor: pointer;
+      backdrop-filter: blur(4px); transition: background 0.2s;
+    }
+    #fsBtn:hover { background: rgba(255,255,255,0.2); }
+
+    /* ── Re-race banner ── */
+    #reraceBanner {
+      display: none; position: fixed; inset: 0; z-index: 999;
+      background: rgba(220, 38, 38, 0.95);
+      flex-direction: column; align-items: center; justify-content: center;
+      font-size: 5rem; font-weight: 900; letter-spacing: 6px; text-transform: uppercase;
+      line-height: 1.2; color: #fff;
+    }
+    #reraceBanner.show { display: flex; }
+    #reraceBanner small { font-size: 1.5rem; letter-spacing: 4px; }
+  </style>
+  <script src="../config.js"></script>
+</head>
+<body>
+
+<div id="slide">
+  <div class="idle-msg">Waiting for announcer…</div>
+  <div class="idle-sub">pwd.k.vu/display/screen.html</div>
+</div>
+
+<button id="fsBtn" title="Toggle fullscreen" onclick="toggleFS()">⛶</button>
+
+<div id="reraceBanner">
+  ⚠ RE-RACE
+  <div id="reraceBannerLabel" style="font-size:1.5rem;font-weight:800;letter-spacing:3px;margin-top:10px;"></div>
+  <small style="margin-top:12px;">Please reset the track</small>
+</div>
+
+<script src="../config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="../lib/api.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+  const sb = createClient();
+
+  // ── Utilities ─────────────────────────────────────────────────
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function toggleFS() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+    else document.exitFullscreen();
+  }
+  document.addEventListener('fullscreenchange', () => {
+    document.getElementById('fsBtn').textContent = document.fullscreenElement ? '✕' : '⛶';
+  });
+
+  // ── Interval handles ──────────────────────────────────────────
+  let _timerInterval = null, _stopwatchInterval = null, _liveInterval = null;
+  let _gSlidesBaseUrl = '', _gSlidesIndex = 1;
+  function clearAllIntervals() {
+    clearInterval(_timerInterval); clearInterval(_stopwatchInterval); clearInterval(_liveInterval);
+    _timerInterval = _stopwatchInterval = _liveInterval = null;
+  }
+
+  // ── Google Slides renderer ────────────────────────────────────
+  function _renderGSlides() {
+    const url = _gSlidesBaseUrl.replace(/[&?]slide=\d+/, '') + '&slide=' + _gSlidesIndex;
+    const slideEl = document.getElementById('slide');
+    // Reuse existing iframe instead of destroying/recreating it — avoids black screen on nav
+    let ifr = slideEl.querySelector('.gslides-ifr');
+    if (!ifr) {
+      slideEl.innerHTML = `
+        <div style="position:fixed;inset:0;z-index:10;">
+          <iframe class="gslides-ifr" allowfullscreen
+            style="position:absolute;inset:0;width:100%;height:100%;border:none;"></iframe>
+          <div style="position:absolute;bottom:0;left:0;right:0;height:52px;background:#0b0d14;z-index:2;pointer-events:none;"></div>
+        </div>`;
+      ifr = slideEl.querySelector('.gslides-ifr');
+    }
+    ifr.src = url;
+  }
+
+  // ── Slide renderer ─────────────────────────────────────────────
+  function setSlide(html) {
+    clearAllIntervals();
+    const el = document.getElementById('slide');
+    el.style.animation = 'none'; el.offsetHeight; el.style.animation = '';
+    el.innerHTML = html;
+  }
+
+  // ── Slide router ──────────────────────────────────────────────
+  function showSlide(data) {
+    switch (data.type) {
+
+      case 'idle':
+        setSlide(`<div class="idle-msg">Waiting for announcer…</div><div class="idle-sub">pwd.k.vu/display/screen.html</div>`);
+        break;
+
+      case 'text':
+        setSlide(`
+          <div class="slide-headline">${data.message??''}</div>
+          ${data.subtitle ? `<div class="slide-subtitle">${data.subtitle}</div>` : ''}`);
+        break;
+
+      case 'color-text': {
+        const bg    = esc(data.bg    || '#1a56db');
+        const color = esc(data.color || '#ffffff');
+        clearAllIntervals();
+        const el = document.getElementById('slide');
+        el.style.animation = 'none'; el.offsetHeight; el.style.animation = '';
+        el.innerHTML = `<div class="slide-color-bg" style="background:${bg};color:${color};">
+          <div class="slide-headline" style="color:${color};">${data.message??''}</div>
+          ${data.subtitle ? `<div class="slide-subtitle" style="color:${color};opacity:0.75;">${data.subtitle}</div>` : ''}
+        </div>`;
+        break;
+      }
+
+      case 'image':
+        setSlide(`<div class="slide-image"><img src="${esc(data.url)}" /></div>`);
+        break;
+
+      case 'register': {
+        const url = data.url || (location.origin + '/');
+        setSlide(`
+          <div class="reg-title">Register Your Car!</div>
+          <div class="reg-step">Scan the QR code or visit the link below,<br>then bring your car to the inspection table.</div>
+          <div class="reg-qr-wrap" id="regQR"></div>
+          <div class="reg-url">${esc(url)}</div>`);
+        new QRCode(document.getElementById('regQR'), {
+          text: url, width: 240, height: 240,
+          colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.H
+        });
+        break;
+      }
+
+      case 'race':
+        clearAllIntervals();
+        document.getElementById('slide').innerHTML =
+          `<iframe src="../display/index.html" style="position:fixed;inset:0;width:100vw;height:100vh;border:none;z-index:10;"></iframe>`;
+        break;
+
+      case 'timer':
+        clearAllIntervals();
+        startCountdown(data.seconds || 0, data.label || '');
+        break;
+
+      case 'stopwatch':
+        clearAllIntervals();
+        startStopwatch();
+        break;
+
+      case 'scoreboard':
+        setSlide(`<div class="idle-msg" style="letter-spacing:2px;">Loading standings…</div>`);
+        loadScoreboard();
+        _liveInterval = setInterval(loadScoreboard, 10000);
+        break;
+
+      case 'split':
+        clearAllIntervals();
+        renderSplitShell();
+        loadSplit();
+        _liveInterval = setInterval(loadSplit, 5000);
+        break;
+
+      case 'gslides': {
+        _gSlidesBaseUrl = data.url || '';
+        _gSlidesIndex = 1;
+        clearAllIntervals();
+        _renderGSlides();
+        break;
+      }
+
+      case 'gslides-nav': {
+        if (data.dir === 'next') _gSlidesIndex = Math.max(1, _gSlidesIndex + 1);
+        if (data.dir === 'prev') _gSlidesIndex = Math.max(1, _gSlidesIndex - 1);
+        _renderGSlides();
+        break;
+      }
+    }
+  }
+
+  // ── Countdown timer ───────────────────────────────────────────
+  function startCountdown(total, label) {
+    function render(s) {
+      const m = String(Math.floor(s / 60)).padStart(2,'0');
+      const sec = String(s % 60).padStart(2,'0');
+      const isDone = s <= 0;
+      const el = document.getElementById('slide'); if (!el) return;
+      el.innerHTML = `
+        <div class="slide-timer${isDone ? ' done' : ''}">${m}<span class="timer-colon">:</span>${sec}</div>
+        ${label ? `<div class="timer-label">${esc(label)}</div>` : ''}`;
+    }
+    const el = document.getElementById('slide');
+    el.style.animation = 'none'; el.offsetHeight; el.style.animation = '';
+    render(total);
+    let remaining = total;
+    if (remaining > 0) {
+      _timerInterval = setInterval(() => {
+        remaining--; render(remaining);
+        if (remaining <= 0) clearInterval(_timerInterval);
+      }, 1000);
+    }
+  }
+
+  // ── Stopwatch ─────────────────────────────────────────────────
+  function startStopwatch() {
+    let elapsed = 0;
+    function render(s) {
+      const m = String(Math.floor(s / 60)).padStart(2,'0');
+      const sec = String(s % 60).padStart(2,'0');
+      const el = document.getElementById('slide'); if (!el) return;
+      el.innerHTML = `<div class="slide-stopwatch">${m}<span class="stopwatch-colon">:</span>${sec}</div>`;
+    }
+    const el = document.getElementById('slide');
+    el.style.animation = 'none'; el.offsetHeight; el.style.animation = '';
+    render(0);
+    _stopwatchInterval = setInterval(() => { elapsed++; render(elapsed); }, 1000);
+  }
+
+  // ── Scoreboard (pulls live from DB) ───────────────────────────
+  async function loadScoreboard() {
+    try {
+      const { data: state } = await sb.from('race_state').select('current_round_id').eq('id',1).single();
+      const { data: cars }  = await sb.from('cars').select('id,car_number,kid_name').eq('legal_status','legal').eq('eliminated',false);
+      if (!cars?.length) { document.getElementById('slide').innerHTML = `<div class="idle-msg">No active standings yet</div>`; return; }
+
+      const pts = {};
+      cars.forEach(c => pts[c.id] = 0);
+      if (state?.current_round_id) {
+        const { data: res } = await sb.from('heat_results')
+          .select('first_place_car,second_place_car,third_place_car,fourth_place_car,heats!inner(round_id)')
+          .eq('heats.round_id', state.current_round_id);
+        (res||[]).forEach(r => {
+          [[r.first_place_car,1],[r.second_place_car,2],[r.third_place_car,3],[r.fourth_place_car,4]]
+            .forEach(([id,p]) => { if (id && pts[id]!==undefined) pts[id]+=p; });
+        });
+      }
+      const sorted = cars.map(c=>({...c,pts:pts[c.id]??0})).sort((a,b)=>a.pts-b.pts||a.car_number-b.car_number);
+      const medals = ['🥇','🥈','🥉'];
+      const rows = sorted.map((c,i) => `
+        <div class="sb-row${i<3?` rank-${i+1}`:''}">
+          <div class="sb-rank">${medals[i]||i+1}</div>
+          <div class="sb-name">${esc(c.kid_name)}<span class="sb-carno">Car #${c.car_number}</span></div>
+          <div class="sb-pts">${state?.current_round_id?`${c.pts} pts`:'—'}</div>
+        </div>`).join('');
+      const el = document.getElementById('slide'); if (!el) return;
+      el.innerHTML = `<div class="scoreboard-slide"><div class="sb-header">Current Standings</div><div class="sb-rows">${rows}</div></div>`;
+    } catch(e) { console.error('Scoreboard',e); }
+  }
+
+  // ── Split slide (live lanes + standings) ──────────────────────
+  function renderSplitShell() {
+    const el = document.getElementById('slide');
+    el.style.animation = 'none'; el.offsetHeight; el.style.animation = '';
+    el.innerHTML = `
+      <div class="split-slide">
+        <div class="split-panel">
+          <div class="split-panel-label">Now on Track</div>
+          <div class="split-panel-rows" id="splitLanes"><div style="color:var(--muted)">Loading…</div></div>
+        </div>
+        <div class="split-panel">
+          <div class="split-panel-label">Standings</div>
+          <div class="split-panel-rows" id="splitStandings"><div style="color:var(--muted)">Loading…</div></div>
+        </div>
+      </div>`;
+  }
+
+  async function loadSplit() {
+    try {
+      const { data: state } = await sb.from('race_state').select('current_heat_id,current_round_id').eq('id',1).single();
+
+      // Fetch active cars first to detect final round (≤4 cars = suspense mode)
+      const { data: cars } = await sb.from('cars').select('id,car_number,kid_name').eq('legal_status','legal').eq('eliminated',false);
+      const isFinal = (cars?.length ?? 0) > 0 && (cars?.length ?? 0) <= 4;
+
+      // Adjust layout: final round = full-width lanes, standings hidden
+      const splitEl = document.querySelector('.split-slide');
+      const standPanel = document.getElementById('splitStandings')?.closest('.split-panel');
+      if (splitEl) splitEl.style.gridTemplateColumns = isFinal ? '1fr' : '';
+      if (standPanel) standPanel.style.display = isFinal ? 'none' : '';
+
+      // Lanes
+      const lanesEl = document.getElementById('splitLanes');
+      if (lanesEl) {
+        if (state?.current_heat_id) {
+          const { data: entries } = await sb.from('heat_entries')
+            .select('lane_number,cars(car_number,kid_name)').eq('heat_id',state.current_heat_id).order('lane_number');
+          const nameStyle = isFinal ? ' style="font-size:clamp(3.5rem,7vw,7rem);"' : '';
+          const numStyle  = isFinal ? ' style="font-size:clamp(2rem,4vw,4rem);"' : '';
+          const carStyle  = isFinal ? ' style="font-size:1.1rem;"' : '';
+          const rowStyle  = isFinal ? ' style="padding:28px 40px;"' : '';
+          lanesEl.innerHTML = (entries||[]).map(e => `
+            <div class="sp-lane-row"${rowStyle}>
+              <div class="sp-lane-num"${numStyle}>${e.lane_number}</div>
+              <div><div class="sp-lane-name"${nameStyle}>${esc(e.cars?.kid_name??'—')}</div><div class="sp-lane-car"${carStyle}>Car #${e.cars?.car_number??'—'}</div></div>
+            </div>`).join('') || `<div style="color:var(--muted)">No active heat</div>`;
+        } else {
+          lanesEl.innerHTML = `<div style="color:var(--muted)">Waiting for next heat…</div>`;
+        }
+      }
+
+      // Standings (not shown in final round — suspense!)
+      if (isFinal) return;
+      const standEl = document.getElementById('splitStandings');
+      if (!standEl) return;
+      if (!cars?.length) { standEl.innerHTML = `<div style="color:var(--muted)">No standings yet</div>`; return; }
+      const pts = {}, races = {};
+      cars.forEach(c => { pts[c.id]=0; races[c.id]=0; });
+      if (state?.current_round_id) {
+        const { data: res } = await sb.from('heat_results')
+          .select('first_place_car,second_place_car,third_place_car,fourth_place_car,heats!inner(round_id)')
+          .eq('heats.round_id',state.current_round_id);
+        (res||[]).forEach(r=>{
+          [[r.first_place_car,1],[r.second_place_car,2],[r.third_place_car,3],[r.fourth_place_car,4]]
+            .forEach(([id,p])=>{ if(id&&pts[id]!==undefined){ pts[id]+=p; races[id]++; } });
+        });
+      }
+      // Only show cars that have raced (>0 races), ranked by avg pts (lower = better)
+      const raced = cars.filter(c => races[c.id] > 0)
+        .map(c=>({...c, pts:pts[c.id], races:races[c.id], avg:pts[c.id]/races[c.id]}))
+        .sort((a,b)=>a.avg-b.avg||a.car_number-b.car_number).slice(0,6);
+      if (!raced.length) { standEl.innerHTML = `<div style="color:var(--muted)">No heats run yet</div>`; return; }
+      const medals = ['🥇','🥈','🥉'];
+      standEl.innerHTML = raced.map((c,i)=>`
+        <div class="sp-sb-row${i<3?` rank-${i+1}`:''}">
+          <div class="sp-rank">${medals[i]||i+1}</div>
+          <div class="sp-name">${esc(c.kid_name)}</div>
+          <div class="sp-pts">${c.races}r&nbsp;·&nbsp;${c.avg.toFixed(1)}avg</div>
+        </div>`).join('');
+    } catch(e) { console.error('Split',e); }
+  }
+
+  // ── Realtime listeners ────────────────────────────────────────
+  sb.channel('announcer-control')
+    .on('broadcast', { event: 'slide' }, ({ payload }) => showSlide(payload))
+    .on('broadcast', { event: 'scroll' }, ({ payload }) => {
+      const el = document.querySelector('.sb-rows');
+      if (el) el.scrollBy({ top: payload.dir === 'down' ? 140 : -140, behavior: 'smooth' });
+    })
+    .subscribe();
+
+  sb.channel('rerace-control')
+    .on('broadcast', { event: 'rerace' }, ({ payload }) => {
+      const banner = document.getElementById('reraceBanner');
+      const lbl    = document.getElementById('reraceBannerLabel');
+      lbl.textContent = payload?.round != null ? `Round ${payload.round} — Heat ${payload.heat}` : '';
+      banner.classList.add('show');
+      setTimeout(() => banner.classList.remove('show'), 7000);
+    })
+    .subscribe();
+</script>
+</body>
+</html>

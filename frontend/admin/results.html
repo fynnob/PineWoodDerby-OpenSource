@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Race Officials — Pinewood Derby</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../config.js"></script>
+</head>
+<body>
+
+<!-- PIN gate -->
+<div id="pinGate" style="position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;">
+  <div style="text-align:center;max-width:300px;padding:20px;">
+    <h2 style="margin-bottom:8px;">Admin Access</h2>
+    <p style="margin-bottom:16px;">Enter the 4-digit PIN</p>
+    <input type="tel" id="pinInput" maxlength="4" placeholder="••••" autocomplete="off"
+           style="text-align:center;font-size:2rem;letter-spacing:12px;width:160px;margin:0 auto 16px;display:block;" />
+    <p id="pinErr" style="color:var(--danger);font-size:0.82rem;min-height:1.4em;"></p>
+  </div>
+</div>
+<script>
+(function(){
+  const PIN=(typeof CONFIG!=='undefined'&&CONFIG.admin_pin)||'2468',KEY='derby_admin_pin';
+  if(localStorage.getItem(KEY)===PIN){document.getElementById('pinGate').style.display='none';}
+  else{document.getElementById('pinInput').addEventListener('input',function(){if(this.value.length===4){if(this.value===PIN){localStorage.setItem(KEY,PIN);document.getElementById('pinGate').style.display='none';}else{document.getElementById('pinErr').textContent='Wrong PIN';this.value='';}}});document.getElementById('pinInput').focus();}
+})();
+</script>
+
+<nav class="top-nav">
+  <span class="brand">Derby</span>
+  <a href="index.html">Hub</a>
+  <a href="inspection.html">Inspection</a>
+  <a href="track.html">Track</a>
+  <a href="results.html" class="active">Officials</a>
+  <a href="cars.html">Cars</a>
+  <a href="announcer.html">Screen</a>
+  <a href="settings.html">⚙ Settings</a>
+</nav>
+
+<div class="container">
+
+  <!-- ── Heat Control ─────────────────────────────────────── -->
+  <div class="card" id="heatInfoCard">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+      <div>
+        <div style="font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:1px;">Current Heat</div>
+        <h2 id="heatLabel" style="color:var(--accent2);">Loading…</h2>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-ghost-danger btn-lg" onclick="reraceHeat()">⚠ Re-race</button>
+        <button class="btn btn-primary btn-lg" id="nextHeatBtn" onclick="advanceHeat()">▶ Next Heat</button>
+      </div>
+    </div>
+
+    <!-- Mode toggle -->
+    <div class="seg-ctrl" id="modeToggle" style="display:none;">
+      <button class="seg-btn active" id="modeQuick" onclick="setMode('quick')">⚡ Quick Tap</button>
+      <button class="seg-btn"        id="modeDrop"  onclick="setMode('drop')">📋 Dropdown</button>
+    </div>
+
+    <!-- Results entry — Quick Tap -->
+    <div id="quickSection" style="display:none;">
+      <p style="margin-bottom:10px; font-size:0.85rem;">Tap cars in finish order (1st → last).</p>
+      <div id="quickTap" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;"></div>
+      <button class="btn btn-ghost btn-sm" onclick="resetQuickTap()">Reset</button>
+    </div>
+
+    <!-- Results entry — Dropdown -->
+    <div id="dropSection" style="display:none;">
+      <div class="finish-grid" id="finishGrid"></div>
+    </div>
+
+    <!-- Submit / already entered -->
+    <div id="submitWrap" style="display:none; margin-top:12px;">
+      <button class="btn btn-gold btn-lg btn-full" id="submitBtn" onclick="submitResults()">Submit Results</button>
+    </div>
+
+    <div id="existingCard" style="display:none; margin-top:12px;">
+      <div id="existingBody"></div>
+      <button class="btn btn-ghost-danger btn-sm" style="margin-top:10px;" onclick="clearResults()">⚠ Re-enter Results</button>
+    </div>
+
+    <div id="noHeatMsg" style="display:none;">
+      <div class="empty-state">No active heat — start a round below first.</div>
+    </div>
+  </div>
+
+  <!-- ── Round Progress + Standings ───────────────────────── -->
+  <div class="card" id="roundCard">
+    <div class="card-title">Round Progress</div>
+    <div id="roundBody"><span class="spinner"></span></div>
+  </div>
+
+  <!-- ── Edit Past Results ──────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">Edit Past Results</div>
+    <div id="editResLock">
+      <p style="font-size:0.85rem; color:var(--muted2); margin-bottom:12px;">Officials-only. Enter the officials code to unlock.</p>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <input type="tel" id="editResPin" maxlength="4" placeholder="••••" autocomplete="off"
+               style="text-align:center;font-size:1.5rem;letter-spacing:8px;width:110px;" />
+        <button class="btn btn-primary" onclick="checkEditResPin()">Unlock</button>
+      </div>
+      <p id="editResPinErr" style="color:var(--danger);font-size:0.82rem;min-height:1.2em;margin-top:6px;"></p>
+    </div>
+    <div id="editResBody" style="display:none;">
+      <p style="font-size:0.85rem; color:var(--muted2); margin-bottom:12px;">Tap a completed heat to re-enter its results.</p>
+      <div id="editResList"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Re-race confirm modal -->
+<div class="confirm-overlay" id="reraceOverlay">
+  <div class="confirm-box" style="max-width:380px; width:100%; text-align:center;">
+    <div style="font-size:2.2rem; font-weight:900; color:var(--danger); letter-spacing:2px; margin-bottom:8px;">⚠ RE-RACE</div>
+    <div id="reraceModalLabel" style="font-size:1.4rem; font-weight:800; margin-bottom:12px;"></div>
+    <p style="font-size:0.9rem; color:var(--muted2); margin-bottom:20px;">All entered results will be cleared and the heat will be reset for re-running.</p>
+    <div class="confirm-btns">
+      <button class="btn btn-ghost btn-full" onclick="document.getElementById('reraceOverlay').classList.remove('open')">Cancel</button>
+      <button class="btn btn-danger btn-full" onclick="confirmRerace()">⚠ Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Heat Results modal -->
+<div class="confirm-overlay" id="editHeatOverlay">
+  <div class="confirm-box" style="max-width:420px; width:100%;">
+    <h3 id="editHeatTitle" style="margin-bottom:16px;">Edit Heat</h3>
+    <div class="finish-grid" id="editHeatGrid"></div>
+    <p id="editHeatErr" style="color:var(--danger);font-size:0.82rem;min-height:1.2em;margin-top:8px;"></p>
+    <div class="confirm-btns" style="margin-top:12px;">
+      <button class="btn btn-ghost btn-full" onclick="document.getElementById('editHeatOverlay').classList.remove('open')">Cancel</button>
+      <button class="btn btn-primary btn-full" id="saveEditHeatBtn" onclick="saveEditHeat()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="../config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="../lib/api.js"></script>
+<script>
+  const sb = createClient();
+
+  let currentHeatId = null;
+  let currentRoundId = null;
+  let currentRoundNum = '?';
+  let currentHeatNum  = '?';
+  let heatEntries   = [];  // [{lane_number, car_id, car_number, kid_name}]
+  let quickTapOrder = [];
+  let currentMode   = 'quick';
+
+  function toast(msg, ok = true) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = ok ? 'show ok' : 'show err';
+    setTimeout(() => el.className = '', 3000);
+  }
+
+  // ── Mode toggle ───────────────────────────────────────────────
+  function setMode(mode) {
+    currentMode = mode;
+    document.getElementById('modeQuick').classList.toggle('active', mode === 'quick');
+    document.getElementById('modeDrop').classList.toggle('active', mode === 'drop');
+    document.getElementById('quickSection').style.display = mode === 'quick' ? 'block' : 'none';
+    document.getElementById('dropSection').style.display  = mode === 'drop'  ? 'block' : 'none';
+    if (mode === 'quick') { resetQuickTap(); }
+  }
+
+  // ── Load page ─────────────────────────────────────────────────
+  async function loadPage() {
+    const { data: state } = await sb
+      .from('race_state')
+      .select('current_heat_id, current_round_id, heats(heat_number, status, rounds(round_number))')
+      .eq('id', 1)
+      .single();
+
+    currentRoundId = state?.current_round_id || null;
+    currentHeatId  = state?.current_heat_id  || null;
+
+    const heat  = state?.heats;
+    const round = heat?.rounds;
+
+    if (!currentHeatId) {
+      document.getElementById('heatLabel').textContent = 'No active heat';
+      document.getElementById('modeToggle').style.display = 'none';
+      document.getElementById('quickSection').style.display = 'none';
+      document.getElementById('dropSection').style.display  = 'none';
+      document.getElementById('submitWrap').style.display   = 'none';
+      document.getElementById('existingCard').style.display = 'none';
+      document.getElementById('noHeatMsg').style.display    = 'block';
+    } else {
+      currentRoundNum = round?.round_number ?? '?';
+      currentHeatNum  = heat?.heat_number  ?? '?';
+      document.getElementById('heatLabel').textContent =
+        `Round ${currentRoundNum} — Heat ${currentHeatNum}`;
+      document.getElementById('noHeatMsg').style.display = 'none';
+
+      // Fetch entries
+      const { data: entries } = await sb
+        .from('heat_entries')
+        .select('lane_number, car_id, cars(car_number, kid_name)')
+        .eq('heat_id', currentHeatId)
+        .order('lane_number');
+
+      heatEntries = (entries || []).map(e => ({
+        lane_number: e.lane_number,
+        car_id:      e.car_id,
+        car_number:  e.cars.car_number,
+        kid_name:    e.cars.kid_name
+      }));
+
+      // Check existing results
+      const { data: existing } = await sb
+        .from('heat_results')
+        .select('*')
+        .eq('heat_id', currentHeatId)
+        .maybeSingle();
+
+      if (existing) {
+        showExistingResults(existing);
+      } else {
+        document.getElementById('existingCard').style.display = 'none';
+        document.getElementById('modeToggle').style.display = 'flex';
+        document.getElementById('submitWrap').style.display  = 'block';
+        renderFinishGrid();
+        renderQuickTap();
+        setMode(currentMode);
+      }
+    }
+
+    loadRoundSection();
+  }
+
+  // ── Quick tap ─────────────────────────────────────────────────
+  function renderQuickTap() {
+    quickTapOrder = [];
+    document.getElementById('quickTap').innerHTML = heatEntries.map(e => `
+      <button class="btn btn-ghost btn-lg" id="tap_${e.car_id}" onclick="tapCar('${e.car_id}')"
+              style="flex:1; min-width:64px; flex-direction:column; min-height:68px; font-size:1.4rem; font-weight:900; color:var(--accent); gap:2px;">
+        ${e.car_number}<span style="font-size:0.7rem; font-weight:600; color:var(--muted); line-height:1;">${e.kid_name}</span>
+      </button>
+    `).join('');
+  }
+
+  function tapCar(carId) {
+    if (quickTapOrder.includes(carId)) return;
+    quickTapOrder.push(carId);
+    const pos = quickTapOrder.length;
+    const btn = document.getElementById('tap_' + carId);
+    const colors = ['#d97706','#6b7280','#b45309','#2563eb'];
+    btn.style.borderColor = colors[pos-1] || 'var(--accent2)';
+    btn.style.color       = colors[pos-1] || 'var(--text)';
+    // Sync dropdown
+    const sel = document.getElementById('pos_' + carId);
+    if (sel) sel.value = pos;
+    if (quickTapOrder.length === heatEntries.length) toast('All placed — hit Submit!');
+  }
+
+  function resetQuickTap() {
+    quickTapOrder = [];
+    renderFinishGrid();
+    renderQuickTap();
+  }
+
+  // ── Dropdown ──────────────────────────────────────────────────
+  function renderFinishGrid() {
+    const positions = ['1st','2nd','3rd','4th'];
+    document.getElementById('finishGrid').innerHTML = heatEntries.map(e => `
+      <div class="finish-lane">
+        <div class="lane-heading">Lane ${e.lane_number}</div>
+        <div class="car-badge">#${e.car_number}</div>
+        <div style="font-size:0.85rem; color:var(--muted); margin:4px 0 8px;">${e.kid_name}</div>
+        <select id="pos_${e.car_id}">
+          <option value="">Finish…</option>
+          ${positions.map((p,i) => `<option value="${i+1}">${p}</option>`).join('')}
+        </select>
+      </div>
+    `).join('');
+  }
+
+  // ── Submit ────────────────────────────────────────────────────
+  async function submitResults() {
+    const posMap = {};
+    for (const e of heatEntries) {
+      const sel = document.getElementById('pos_' + e.car_id);
+      const val = sel ? parseInt(sel.value) : 0;
+      if (!val) { toast('Set a position for every car first.', false); return; }
+      if (posMap[val]) { toast("Two cars can't share the same position!", false); return; }
+      posMap[val] = e.car_id;
+    }
+    for (let p = 1; p <= heatEntries.length; p++) {
+      if (!posMap[p]) { toast(`Position ${p} is not assigned.`, false); return; }
+    }
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+
+    try {
+      const { error } = await sb.from('heat_results').insert({
+        heat_id:          currentHeatId,
+        first_place_car:  posMap[1],
+        second_place_car: posMap[2],
+        third_place_car:  posMap[3],
+        fourth_place_car: posMap[4]
+      });
+      if (error) throw error;
+      toast('Results saved! 🏁');
+      setTimeout(loadPage, 600);
+    } catch (err) {
+      toast('Save failed: ' + err.message, false);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Submit Results';
+    }
+  }
+
+  // ── Existing results ──────────────────────────────────────────
+  function showExistingResults(result) {
+    document.getElementById('modeToggle').style.display  = 'none';
+    document.getElementById('quickSection').style.display = 'none';
+    document.getElementById('dropSection').style.display  = 'none';
+    document.getElementById('submitWrap').style.display   = 'none';
+    document.getElementById('existingCard').style.display = 'block';
+
+    const places = [
+      { label: '🥇 1st', id: result.first_place_car },
+      { label: '🥈 2nd', id: result.second_place_car },
+      { label: '🥉 3rd', id: result.third_place_car },
+      { label: '4th',    id: result.fourth_place_car },
+    ];
+    const carMap = {};
+    heatEntries.forEach(e => carMap[e.car_id] = e);
+    document.getElementById('existingBody').innerHTML = places.map(p => {
+      const car = carMap[p.id];
+      return `<div class="leaderboard-row">
+        <div class="rank">${p.label}</div>
+        <div class="car-num">#${car?.car_number ?? '?'}</div>
+        <div class="name">${car?.kid_name ?? 'Unknown'}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function clearResults() {
+    if (!confirm('Clear results for this heat?')) return;
+    const { error } = await sb.from('heat_results').delete().eq('heat_id', currentHeatId);
+    if (error) { toast('Failed: ' + error.message, false); return; }
+    toast('Cleared.');
+    loadPage();
+  }
+
+  // ── Re-race ───────────────────────────────────────────────────
+  function reraceHeat() {
+    if (!currentHeatId) { toast('No active heat.', false); return; }
+    document.getElementById('reraceModalLabel').textContent = `Round ${currentRoundNum} — Heat ${currentHeatNum}`;
+    document.getElementById('reraceOverlay').classList.add('open');
+  }
+
+  async function confirmRerace() {
+    document.getElementById('reraceOverlay').classList.remove('open');
+    await sb.from('heat_results').delete().eq('heat_id', currentHeatId);
+    await sb.from('heats').update({ status: 'active' }).eq('id', currentHeatId);
+    sb.channel('rerace-control').send({ type: 'broadcast', event: 'rerace', payload: { round: currentRoundNum, heat: currentHeatNum } });
+    toast('Re-race signalled!');
+    loadPage();
+  }
+
+  // ── Edit Past Results (PIN 1357) ──────────────────────────────
+  const EDIT_PIN = '1357';
+  let _editHeatId = null;
+  let _editHeatEntries = [];
+
+  function checkEditResPin() {
+    const input = document.getElementById('editResPin');
+    if (input.value === EDIT_PIN) {
+      sessionStorage.setItem('derby_edit_pin', EDIT_PIN);
+      document.getElementById('editResLock').style.display = 'none';
+      document.getElementById('editResBody').style.display  = 'block';
+      loadEditResList();
+    } else {
+      document.getElementById('editResPinErr').textContent = 'Wrong code';
+      input.value = '';
+    }
+  }
+
+  function initEditSection() {
+    if (sessionStorage.getItem('derby_edit_pin') === EDIT_PIN) {
+      document.getElementById('editResLock').style.display = 'none';
+      document.getElementById('editResBody').style.display  = 'block';
+    }
+  }
+
+  async function loadEditResList() {
+    const el = document.getElementById('editResList');
+    if (!currentRoundId) { el.innerHTML = '<div class="empty-state">No active round.</div>'; return; }
+    const { data: heats } = await sb.from('heats')
+      .select('id, heat_number')
+      .eq('round_id', currentRoundId)
+      .eq('status', 'completed')
+      .order('heat_number');
+    if (!heats?.length) { el.innerHTML = '<div class="empty-state">No completed heats yet.</div>'; return; }
+    el.innerHTML = heats.map(h => `
+      <div class="leaderboard-row" style="cursor:pointer;" onclick="openEditHeat('${h.id}', ${h.heat_number})">
+        <div class="rank">H${h.heat_number}</div>
+        <div class="name">Heat ${h.heat_number}</div>
+        <div class="pts">Edit &rarr;</div>
+      </div>`).join('');
+  }
+
+  async function openEditHeat(heatId, heatNumber) {
+    _editHeatId = heatId;
+    document.getElementById('editHeatErr').textContent = '';
+    const [{ data: entries }, { data: result }] = await Promise.all([
+      sb.from('heat_entries').select('lane_number, car_id, cars(car_number, kid_name)').eq('heat_id', heatId).order('lane_number'),
+      sb.from('heat_results').select('*').eq('heat_id', heatId).maybeSingle()
+    ]);
+    _editHeatEntries = (entries || []).map(e => ({
+      lane_number: e.lane_number, car_id: e.car_id,
+      car_number: e.cars.car_number, kid_name: e.cars.kid_name
+    }));
+    const posMap = {};
+    if (result) {
+      posMap[result.first_place_car] = 1; posMap[result.second_place_car] = 2;
+      posMap[result.third_place_car] = 3; posMap[result.fourth_place_car] = 4;
+    }
+    const positions = ['1st','2nd','3rd','4th'];
+    document.getElementById('editHeatTitle').textContent = `Edit Heat ${heatNumber}`;
+    document.getElementById('editHeatGrid').innerHTML = _editHeatEntries.map(e => `
+      <div class="finish-lane">
+        <div class="lane-heading">Lane ${e.lane_number}</div>
+        <div class="car-badge">#${e.car_number}</div>
+        <div style="font-size:0.85rem;color:var(--muted);margin:4px 0 8px;">${e.kid_name}</div>
+        <select id="editpos_${e.car_id}">
+          <option value="">Finish…</option>
+          ${positions.map((p,i) => `<option value="${i+1}" ${posMap[e.car_id]===i+1?'selected':''}>${p}</option>`).join('')}
+        </select>
+      </div>`).join('');
+    document.getElementById('editHeatOverlay').classList.add('open');
+  }
+
+  async function saveEditHeat() {
+    const posMap = {};
+    for (const e of _editHeatEntries) {
+      const val = parseInt(document.getElementById('editpos_' + e.car_id)?.value);
+      if (!val) { document.getElementById('editHeatErr').textContent = 'Set a position for every car.'; return; }
+      if (posMap[val]) { document.getElementById('editHeatErr').textContent = "Two cars can't share a position!"; return; }
+      posMap[val] = e.car_id;
+    }
+    const btn = document.getElementById('saveEditHeatBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await sb.from('heat_results').delete().eq('heat_id', _editHeatId);
+      const { error } = await sb.from('heat_results').insert({
+        heat_id: _editHeatId, first_place_car: posMap[1],
+        second_place_car: posMap[2], third_place_car: posMap[3], fourth_place_car: posMap[4]
+      });
+      if (error) throw error;
+      toast('Results updated!');
+      document.getElementById('editHeatOverlay').classList.remove('open');
+      loadPage();
+    } catch(err) {
+      document.getElementById('editHeatErr').textContent = 'Save failed: ' + err.message;
+    } finally { btn.disabled = false; btn.textContent = 'Save'; }
+  }
+
+  // ── Advance heat ──────────────────────────────────────────────
+  async function advanceHeat() {
+    const btn = document.getElementById('nextHeatBtn');
+    btn.disabled = true; btn.textContent = '…';
+    try {
+      if (!currentRoundId) { toast('No active round — start one below.', false); return; }
+
+      if (currentHeatId) {
+        const { data: result } = await sb.from('heat_results')
+          .select('id').eq('heat_id', currentHeatId).maybeSingle();
+        if (!result) { toast('Enter results for this heat first!', false); return; }
+        await sb.from('heats').update({ status: 'completed' }).eq('id', currentHeatId);
+      }
+
+      const { data: nextHeat } = await sb.from('heats')
+        .select('id, heat_number')
+        .eq('round_id', currentRoundId)
+        .eq('status', 'pending')
+        .order('heat_number').limit(1).maybeSingle();
+
+      if (!nextHeat) {
+        toast('All heats done! See round section below.', false);
+        await sb.from('race_state').update({ updated_at: new Date().toISOString() }).eq('id', 1);
+        loadPage(); return;
+      }
+
+      await sb.from('heats').update({ status: 'active' }).eq('id', nextHeat.id);
+      await sb.from('race_state').update({
+        current_heat_id: nextHeat.id,
+        updated_at: new Date().toISOString()
+      }).eq('id', 1);
+
+      toast(`Heat ${nextHeat.heat_number} active!`);
+      loadPage();
+    } finally {
+      btn.disabled = false; btn.textContent = '▶ Next Heat';
+    }
+  }
+
+  // ── Round section ─────────────────────────────────────────────
+  async function loadRoundSection() {
+    if (!currentRoundId) {
+      document.getElementById('roundBody').innerHTML = `
+        <p style="margin-bottom:16px;">No round started yet.</p>
+        <button class="btn btn-gold btn-lg" onclick="startFirstRound()">🚦 Start Round 1</button>`;
+      return;
+    }
+
+    const [{ data: round }, { data: heats }] = await Promise.all([
+      sb.from('rounds').select('*').eq('id', currentRoundId).single(),
+      sb.from('heats').select('id, heat_number, status').eq('round_id', currentRoundId).order('heat_number')
+    ]);
+
+    const total     = heats?.length ?? 0;
+    const completed = heats?.filter(h => h.status === 'completed').length ?? 0;
+    const allDone   = total > 0 && completed === total;
+
+    let html = `
+      <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:16px;">
+        <div>
+          <div style="font-size:0.72rem; color:var(--muted); text-transform:uppercase;">Round</div>
+          <div style="font-size:2rem; font-weight:900; color:var(--accent);">#${round.round_number}</div>
+        </div>
+        <div>
+          <div style="font-size:0.72rem; color:var(--muted); text-transform:uppercase;">Heats Done</div>
+          <div style="font-size:2rem; font-weight:900;">${completed} / ${total}</div>
+        </div>
+      </div>`;
+
+    // Standings (legal cars only — pending treated same as not_legal)
+    const { data: results } = await sb.from('heat_results')
+      .select('first_place_car, second_place_car, third_place_car, fourth_place_car, heats!inner(round_id)')
+      .eq('heats.round_id', currentRoundId);
+
+    const { data: legalCars } = await sb.from('cars')
+      .select('id, car_number, kid_name')
+      .eq('legal_status', 'legal')
+      .eq('eliminated', false);
+
+    if (legalCars?.length) {
+      const pts = {};
+      const fin = {}; // finish counts per car: {carId: [0,0,0,0]} = [1st,2nd,3rd,4th]
+      legalCars.forEach(c => { pts[c.id] = 0; fin[c.id] = [0,0,0,0]; });
+      (results || []).forEach(r => {
+        if (pts[r.first_place_car]  !== undefined) { pts[r.first_place_car]  += 1; fin[r.first_place_car][0]++; }
+        if (pts[r.second_place_car] !== undefined) { pts[r.second_place_car] += 2; fin[r.second_place_car][1]++; }
+        if (pts[r.third_place_car]  !== undefined) { pts[r.third_place_car]  += 3; fin[r.third_place_car][2]++; }
+        if (pts[r.fourth_place_car] !== undefined) { pts[r.fourth_place_car] += 4; fin[r.fourth_place_car][3]++; }
+      });
+      const sorted = legalCars
+        .map(c => ({ ...c, points: pts[c.id] ?? 0, fin: fin[c.id] ?? [0,0,0,0] }))
+        .sort((a, b) => a.points - b.points || a.car_number - b.car_number);
+
+      const finColors = ['#d97706','#6b7280','#b45309','#2563eb'];
+
+      html += `<div style="font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:8px;">Standings</div>`;
+      html += sorted.map((car, i) => {
+        const finHtml = car.fin.map((n, fi) =>
+          `<span style="font-size:0.82rem; font-weight:800; color:${finColors[fi]};">${n}</span>`
+        ).join('<span style="color:var(--muted); margin:0 4px;">|</span>');
+        return `
+        <div class="leaderboard-row ${i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':''}">
+          <div class="rank">${i+1}</div>
+          <div class="car-num">#${car.car_number}</div>
+          <div class="name" style="flex:1; min-width:0;">
+            <div>${car.kid_name}</div>
+            <div style="margin-top:3px;">${finHtml}</div>
+          </div>
+          <div class="pts">${car.points} pts</div>
+        </div>`;
+      }).join('');
+    }
+
+    if (allDone && legalCars && legalCars.length <= 4) {
+      // PODIUM MODE — final round, 4 or fewer cars
+      const pts = {};
+      legalCars.forEach(c => pts[c.id] = 0);
+      (results || []).forEach(r => {
+        if (pts[r.first_place_car]  !== undefined) pts[r.first_place_car]  += 1;
+        if (pts[r.second_place_car] !== undefined) pts[r.second_place_car] += 2;
+        if (pts[r.third_place_car]  !== undefined) pts[r.third_place_car]  += 3;
+        if (pts[r.fourth_place_car] !== undefined) pts[r.fourth_place_car] += 4;
+      });
+      const finalSorted = legalCars
+        .map(c => ({ ...c, points: pts[c.id] ?? 0 }))
+        .sort((a, b) => a.points - b.points || a.car_number - b.car_number);
+
+      // Store for podium use
+      window._podiumCars = finalSorted;
+
+      html += `
+        <hr class="divider" />
+        <p style="margin-bottom:12px; color:var(--success); font-weight:700;">🏆 Final round complete!</p>
+        <button class="btn btn-gold btn-lg btn-full" onclick="startPodium()">Start Podium Ceremony</button>
+        <div id="podiumControls" style="display:none; margin-top:16px;">
+          <p id="podiumStatus" style="font-weight:700; margin-bottom:12px; text-align:center;"></p>
+          <button class="btn btn-primary btn-lg btn-full" id="podiumNextBtn" onclick="podiumNext()">Next →</button>
+        </div>`;
+    } else if (allDone) {
+      html += `
+        <hr class="divider" />
+        <p style="margin-bottom:12px; color:var(--success); font-weight:700;">🎉 All ${total} heats complete!</p>
+        <p style="margin-bottom:12px; font-size:0.88rem;">How many cars advance to Round ${round.round_number + 1}?</p>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <input type="number" id="advanceCount" min="4" max="99" placeholder="e.g. 4"
+                 style="width:110px; margin:0;" />
+          <button class="btn btn-primary" onclick="closeRound('${currentRoundId}', ${round.round_number})">
+            Confirm &amp; Start Round ${round.round_number + 1}
+          </button>
+        </div>`;
+    }
+
+    document.getElementById('roundBody').innerHTML = html;
+  }
+
+  // ── Start first round ─────────────────────────────────────────
+  async function startFirstRound() {
+    const btn = event.target;
+    btn.disabled = true; btn.textContent = 'Starting…';
+    try {
+      const { data: cars } = await sb.from('cars')
+        .select('id, car_number, kid_name')
+        .eq('legal_status', 'legal')
+        .eq('eliminated', false)
+        .order('car_number');
+      if (!cars?.length) { toast('No legal cars. Approve cars in Inspection first.', false); return; }
+      if (cars.length < 4) { toast(`Need at least 4 legal cars. Have ${cars.length}.`, false); return; }
+      await startRound(cars, 1);
+      toast('Round 1 started!');
+      loadPage();
+    } catch (err) {
+      toast('Error: ' + err.message, false);
+    } finally {
+      btn.disabled = false; btn.textContent = '🚦 Start Round 1';
+    }
+  }
+
+  // ── Close round + start next ───────────────────────────────────
+  async function closeRound(roundId, roundNumber) {
+    const advCount = parseInt(document.getElementById('advanceCount').value);
+    if (!advCount || advCount < 4) { toast('Need at least 4 cars to advance (minimum for a heat).', false); return; }
+
+    const { data: results } = await sb.from('heat_results')
+      .select('first_place_car, second_place_car, third_place_car, fourth_place_car, heats!inner(round_id)')
+      .eq('heats.round_id', roundId);
+
+    const { data: legalCars } = await sb.from('cars')
+      .select('id, car_number, kid_name')
+      .eq('legal_status', 'legal')
+      .eq('eliminated', false);
+
+    const pts = {};
+    legalCars.forEach(c => pts[c.id] = 0);
+    (results || []).forEach(r => {
+      if (pts[r.first_place_car]  !== undefined) pts[r.first_place_car]  += 1;
+      if (pts[r.second_place_car] !== undefined) pts[r.second_place_car] += 2;
+      if (pts[r.third_place_car]  !== undefined) pts[r.third_place_car]  += 3;
+      if (pts[r.fourth_place_car] !== undefined) pts[r.fourth_place_car] += 4;
+    });
+    const sorted = legalCars
+      .map(c => ({ ...c, points: pts[c.id] ?? 0 }))
+      .sort((a, b) => a.points - b.points || a.car_number - b.car_number);
+
+    const advancing  = sorted.slice(0, advCount);
+    const eliminated = sorted.slice(advCount);
+
+    const ok = confirm(
+      `Advance: ${advancing.map(c => '#'+c.car_number+' '+c.kid_name).join(', ')}\n\n` +
+      `Eliminate: ${eliminated.length ? eliminated.map(c => '#'+c.car_number+' '+c.kid_name).join(', ') : 'None'}\n\nConfirm?`
+    );
+    if (!ok) return;
+
+    try {
+      if (eliminated.length) {
+        await sb.from('cars').update({ eliminated: true }).in('id', eliminated.map(c => c.id));
+      }
+      await sb.from('rounds').update({ status: 'completed', advance_count: advCount }).eq('id', roundId);
+      await startRound(advancing, roundNumber + 1);
+      toast(`Round ${roundNumber + 1} started!`);
+      loadPage();
+    } catch (err) {
+      toast('Error: ' + err.message, false);
+    }
+  }
+
+  // ── Core: create round, heats, entries ────────────────────────
+
+  function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
+
+  // Fisher-Yates shuffle — returns a new array
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  // Find the best "lane stride" s such that:
+  //  · all 4 cars in every heat are distinct  (s, 2s, 3s ≠ 0 mod N)
+  //  · s is coprime to N  (every car gets varied opponents across heats)
+  //  · s is as close to N/4 as possible  (maximises spread between opponents)
+  function findBestStep(n) {
+    const target = n / 4;
+    let best = null;
+    for (let s = 1; s < n; s++) {
+      if ((2 * s) % n === 0 || (3 * s) % n === 0) continue; // would collide in heat
+      const g    = gcd(s, n);
+      const dist = Math.abs(s - target);
+      // Primary: minimise gcd (want 1). Secondary: closest to target. Tie: larger s wins.
+      if (!best || g < best.g ||
+         (g === best.g && dist < best.dist) ||
+         (g === best.g && dist === best.dist && s > best.s)) {
+        best = { s, g, dist };
+      }
+    }
+    return best ? best.s : 1;
+  }
+
+  // Build an N-heat schedule where:
+  //  · every car races EXACTLY ONCE on each lane  (never 5 times, never 2-car heats)
+  //  · every heat has EXACTLY 4 cars
+  //  · car list is shuffled randomly  → no speed-adjacency clustering
+  //  · lane stride ≈ N/4, coprime to N → opponents spread across the whole field
+  function generateSchedule(carIds) {
+    const ids = shuffle(carIds);   // random order breaks speed-adjacency bias
+    const n   = ids.length;
+    const s   = findBestStep(n);   // balanced stride
+
+    return Array.from({ length: n }, (_, h) =>
+      [0, 1, 2, 3].map(k => ({ lane: k + 1, carId: ids[(h + k * s) % n] }))
+    );
+  }
+
+  async function startRound(cars, roundNumber) {
+    const { data: round, error: rErr } = await sb.from('rounds')
+      .insert({ round_number: roundNumber, status: 'active' }).select().single();
+    if (rErr) throw rErr;
+
+    const schedule = generateSchedule(cars.map(c => c.id));
+    const { data: heats, error: hErr } = await sb.from('heats')
+      .insert(schedule.map((_, i) => ({ round_id: round.id, heat_number: i+1, status: 'pending' })))
+      .select('id, heat_number').order('heat_number');
+    if (hErr) throw hErr;
+
+    const entries = [];
+    heats.forEach((heat, hi) => schedule[hi].forEach(({ lane, carId }) =>
+      entries.push({ heat_id: heat.id, lane_number: lane, car_id: carId })
+    ));
+    const { error: eErr } = await sb.from('heat_entries').insert(entries);
+    if (eErr) throw eErr;
+
+    await sb.from('heats').update({ status: 'active' }).eq('id', heats[0].id);
+    await sb.from('race_state').update({
+      current_round_id: round.id,
+      current_heat_id:  heats[0].id,
+      updated_at: new Date().toISOString()
+    }).eq('id', 1);
+  }
+
+  // ── Podium ceremony ────────────────────────────────────────────
+  let _podiumStep = -1;
+
+  async function startPodium() {
+    const cars = window._podiumCars;
+    if (!cars || cars.length < 3) { toast('Need at least 3 cars for podium.', false); return; }
+
+    _podiumStep = -1;
+
+    const podiumData = {
+      mode: 'podium',
+      step: -1,
+      cars: cars.map((c, i) => ({ rank: i + 1, car_number: c.car_number, kid_name: c.kid_name }))
+    };
+
+    sb.channel('podium-control').send({
+      type: 'broadcast',
+      event: 'podium',
+      payload: podiumData
+    });
+
+    document.querySelector('[onclick="startPodium()"]').style.display = 'none';
+    document.getElementById('podiumControls').style.display = 'block';
+    document.getElementById('podiumStatus').textContent = 'Podium ready — tap Next to reveal 3rd place';
+    document.getElementById('podiumNextBtn').textContent = 'Reveal 3rd place →';
+  }
+
+  async function podiumNext() {
+    _podiumStep++;
+    const cars = window._podiumCars;
+    const labels = ['3rd place', '2nd place', '1st place'];
+
+    sb.channel('podium-control').send({
+      type: 'broadcast',
+      event: 'podium',
+      payload: {
+        mode: 'podium',
+        step: _podiumStep,
+        cars: cars.map((c, i) => ({ rank: i + 1, car_number: c.car_number, kid_name: c.kid_name }))
+      }
+    });
+
+    if (_podiumStep < 3) {
+      const revealed = labels[_podiumStep] || '';
+      document.getElementById('podiumStatus').textContent = `Revealed: ${revealed}`;
+      if (_podiumStep === 2) {
+        document.getElementById('podiumNextBtn').textContent = 'Done 🏁';
+      } else {
+        const nextLabel = labels[_podiumStep + 1] || '';
+        document.getElementById('podiumNextBtn').textContent = `Reveal ${nextLabel} →`;
+      }
+    }
+
+    if (_podiumStep >= 3) {
+      document.getElementById('podiumStatus').textContent = '🏆 Ceremony complete!';
+      document.getElementById('podiumNextBtn').style.display = 'none';
+
+      // ── Build eliminated list with round + points info ──────
+      const { data: elCars } = await sb.from('cars')
+        .select('id, car_number, kid_name')
+        .eq('eliminated', true)
+        .order('car_number');
+
+      const elIds = (elCars || []).map(c => c.id);
+      let eliminatedWithRound = [];
+
+      if (elIds.length) {
+        // Find the last round each car appeared in
+        const { data: entryRounds } = await sb
+          .from('heat_entries')
+          .select('car_id, heats!inner(round_id, rounds!inner(round_number))')
+          .in('car_id', elIds);
+
+        const lastRoundOf = {};
+        (entryRounds || []).forEach(e => {
+          const rn  = e.heats?.rounds?.round_number ?? 0;
+          const rid = e.heats?.round_id;
+          if (!lastRoundOf[e.car_id] || rn > lastRoundOf[e.car_id].round_number) {
+            lastRoundOf[e.car_id] = { round_number: rn, round_id: rid };
+          }
+        });
+
+        // Compute points per car in their elimination round
+        const roundIds = [...new Set(Object.values(lastRoundOf).map(v => v.round_id).filter(Boolean))];
+        const ptsInRound = {};
+        if (roundIds.length) {
+          const { data: roundResults } = await sb
+            .from('heat_results')
+            .select('first_place_car, second_place_car, third_place_car, fourth_place_car, heats!inner(round_id)')
+            .in('heats.round_id', roundIds);
+          (roundResults || []).forEach(r => {
+            [[r.first_place_car,1],[r.second_place_car,2],[r.third_place_car,3],[r.fourth_place_car,4]]
+              .forEach(([id, pts]) => { if (id) ptsInRound[id] = (ptsInRound[id] ?? 0) + pts; });
+          });
+        }
+
+        eliminatedWithRound = elCars.map(c => ({
+          car_number:     c.car_number,
+          kid_name:       c.kid_name,
+          eliminatedRound: lastRoundOf[c.id]?.round_number ?? 0,
+          points:          ptsInRound[c.id] ?? 999
+        }));
+      }
+
+      sb.channel('podium-control').send({
+        type: 'broadcast',
+        event: 'podium',
+        payload: {
+          mode:      'celebration',
+          topCars:   window._podiumCars.map((c, i) => ({ rank: i+1, car_number: c.car_number, kid_name: c.kid_name })),
+          eliminated: eliminatedWithRound
+        }
+      });
+    }
+  }
+
+  loadPage();
+  initEditSection();
+  sb.channel('rerace-control').subscribe(); // keep channel open for sending
+</script>
+</body>
+</html>

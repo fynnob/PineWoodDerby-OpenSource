@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Derby Registration</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="config.js"></script>
+</head>
+<body>
+
+<nav class="top-nav">
+  <span class="brand">Pinewood Derby</span>
+  <button class="btn btn-primary btn-sm" id="showQrBtn" onclick="showDeviceQR()" style="display:none; margin-left:auto;">📱 My QR</button>
+</nav>
+
+<div class="container" style="padding-top:20px;">
+
+  <!-- Registration form -->
+  <div class="card">
+    <div class="card-title">Register a Car</div>
+
+    <label for="kidName">Racer's Name</label>
+    <input type="text" id="kidName" placeholder="e.g. Alex Johnson" maxlength="80"
+           autocomplete="off" autocapitalize="words" />
+
+    <label for="carImage">Car Photo <span style="color:var(--accent); font-weight:600;">(recommended)</span></label>
+    <input type="file" id="carImage" accept="image/*" capture="environment" />
+    <p style="font-size:0.78rem; color:var(--muted2); margin-top:-8px; margin-bottom:12px;">Tapping this opens your camera so you can take a new photo right now — no file browsing needed.</p>
+
+    <div id="imagePreviewWrap" style="display:none; margin-bottom:14px;">
+      <img id="imagePreview" src="" alt="preview"
+           style="max-height:160px; border-radius:10px; border:1px solid var(--border); display:block;" />
+    </div>
+
+    <button class="btn btn-gold btn-lg btn-full" id="registerBtn">
+      ➕ Register Car
+    </button>
+  </div>
+
+  <!-- Registered cars for this device -->
+  <div class="card">
+    <div class="card-title">Your Registered Cars</div>
+    <div id="carList">
+      <div class="empty-state">No cars registered from this device yet.</div>
+    </div>
+  </div>
+
+  <!-- Race Status for this device's cars -->
+  <div class="card" id="raceStatusCard" style="display:none;">
+    <div class="card-title">Live Race Status</div>
+    <div id="raceStatusBody"><span class="spinner"></span></div>
+  </div>
+
+</div>
+
+<!-- Edit car modal -->
+<div class="modal-overlay" id="editModal" onclick="closeEditModal(event)">
+  <div class="modal-sheet">
+    <div style="font-size:0.75rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">Edit Car</div>
+    <label for="editKidName">Racer's Name</label>
+    <input type="text" id="editKidName" placeholder="Racer's name" maxlength="80" autocapitalize="words" />
+    <label for="editCarImage" style="margin-top:12px;">Replace Photo <span style="color:var(--muted2); font-weight:400;">(optional)</span></label>
+    <input type="file" id="editCarImage" accept="image/*" capture="environment" />
+    <p style="font-size:0.78rem; color:var(--muted2); margin-top:-8px; margin-bottom:12px;">Opens camera — leave empty to keep existing photo.</p>
+    <div id="editPreviewWrap" style="display:none; margin-bottom:14px;">
+      <img id="editPreview" src="" alt="preview" style="max-height:120px; border-radius:10px; border:1px solid var(--border); display:block;" />
+    </div>
+    <button class="btn btn-gold btn-full" id="editSaveBtn" onclick="saveCarEdit()">Save Changes</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:8px;" onclick="closeEditModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- Delete car confirm -->
+<div class="confirm-overlay" id="delCarOverlay" style="display:none;">
+  <div class="confirm-box">
+    <p style="margin-bottom:20px; font-weight:600;">Delete this car? This cannot be undone.</p>
+    <div style="display:flex; gap:12px;">
+      <button class="btn btn-ghost btn-full" onclick="closeDelModal()">Cancel</button>
+      <button class="btn btn-danger btn-full" onclick="confirmCarDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Email QR popup (shown after first registration if email is enabled) -->
+<div class="modal-overlay" id="emailQrModal" onclick="closeEmailQrModal(event)">
+  <div class="modal-sheet">
+    <div style="font-size:0.75rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">Get Your QR Code by Email</div>
+    <p style="font-size:0.88rem; color:var(--muted2); margin-bottom:16px; line-height:1.6;">
+      Enter your email and we'll send your check-in QR code — present it on race day instead of your phone.
+      <br><span style="font-size:0.78rem;">Only sent once per device.</span>
+    </p>
+    <label for="emailQrInput">Parent Email</label>
+    <input type="email" id="emailQrInput" placeholder="e.g. parent@example.com" autocomplete="email" />
+    <button class="btn btn-gold btn-full" style="margin-top:12px;" id="emailQrSendBtn" onclick="sendEmailFromPopup()">📧 Send QR Code</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:8px;" onclick="closeEmailQrModal()">Skip</button>
+  </div>
+</div>
+
+<!-- Full-screen QR modal (bottom sheet on mobile) -->
+<div class="modal-overlay" id="qrModal" onclick="closeQR(event)">
+  <div class="modal-sheet">
+    <div style="font-size:0.75rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">Your Check-in QR</div>
+    <div style="display:flex; justify-content:center; margin-bottom:16px;">
+      <div class="qr-block" id="qrCanvas"></div>
+    </div>
+    <p style="font-size:0.85rem; margin-bottom:12px;">
+      Show this at inspection — it covers all your cars.
+    </p>
+    <p style="font-size:1.2rem; font-weight:900; letter-spacing:6px; color:var(--accent); margin-bottom:20px;" id="qrShortCode"></p>
+    <button class="btn btn-ghost btn-full" onclick="closeQR()">Close</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Dependencies -->
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="lib/api.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+  const sb        = createClient();
+  const STORE_KEY  = 'derby_my_cars';
+  const TOKEN_KEY  = 'derby_device_token';
+
+  // ── Device token (one per browser / device) ───────────────────
+  // All cars registered here share this token so inspection can
+  // scan ONE QR and see the whole family's cars at once.
+  function getDeviceToken() {
+    let t = localStorage.getItem(TOKEN_KEY);
+    if (!t) {
+      t = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+      localStorage.setItem(TOKEN_KEY, t);
+    }
+    return t;
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────
+  function toast(msg, ok = true) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = ok ? 'show ok' : 'show err';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.className = '', 3000);
+  }
+
+  // ── localStorage helpers ──────────────────────────────────────
+  function getMyCars() { return JSON.parse(localStorage.getItem(STORE_KEY) || '[]'); }
+  function saveMyCar(car) {
+    const list = getMyCars(); list.push(car);
+    localStorage.setItem(STORE_KEY, JSON.stringify(list));
+  }
+
+  // ── Image preview ─────────────────────────────────────────────
+  document.getElementById('carImage').addEventListener('change', function () {
+    const file = this.files[0]; if (!file) return;
+    document.getElementById('imagePreview').src = URL.createObjectURL(file);
+    document.getElementById('imagePreviewWrap').style.display = 'block';
+  });
+
+  // ── Register ──────────────────────────────────────────────────
+  document.getElementById('registerBtn').addEventListener('click', async () => {
+    const kidName     = document.getElementById('kidName').value.trim();
+    const fileEl      = document.getElementById('carImage');
+    const file        = fileEl.files[0];
+    const deviceToken = getDeviceToken();
+
+    if (!kidName) { toast('Enter the racer\'s name first.', false); return; }
+
+    const btn = document.getElementById('registerBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Registering…';
+
+    try {
+      let imageUrl = null;
+
+      if (file) {
+        const ext      = file.name.split('.').pop();
+        const fileName = `car_${Date.now()}.${ext}`;
+        const { error: upErr } = await sb.storage
+          .from('car-images')
+          .upload(fileName, file, { contentType: file.type, upsert: false });
+        if (upErr) throw upErr;
+        imageUrl = sb.storage.from('car-images').getPublicUrl(fileName).data.publicUrl;
+      }
+
+      // car_number is auto-assigned by DB trigger; device_token links all family cars
+      const { data: car, error: carErr } = await sb
+        .from('cars')
+        .insert({ kid_name: kidName, image_url: imageUrl, device_token: deviceToken })
+        .select()
+        .single();
+
+      if (carErr) throw carErr;
+
+      saveMyCar(car);
+      renderCarList();
+      renderDeviceQR();
+
+      document.getElementById('kidName').value = '';
+      // Note: email field intentionally NOT cleared — same parent may register more kids
+      fileEl.value = '';
+      document.getElementById('imagePreviewWrap').style.display = 'none';
+
+      toast(`Car #${car.car_number} registered! 🏁`);
+
+      // Offer to email QR code after first registration (once per device)
+      const alreadySentEmail = localStorage.getItem('derby_email_sent');
+      if (!alreadySentEmail) {
+        try {
+          const { data: state } = await sb.from('race_state').select('email_enabled').eq('id', 1).single();
+          if (state?.email_enabled) showEmailQrModal();
+        } catch { /* silently skip if DB unreachable */ }
+      }
+    } catch (err) {
+      console.error(err);
+      toast('Registration failed — ' + err.message, false);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '➕ Register Car';
+    }
+  });
+
+  // ── Device QR (covers all cars from this device) ──────────────
+  function renderDeviceQR() {
+    const list = getMyCars();
+    if (!list.length) return;
+    document.getElementById('showQrBtn').style.display = 'inline-flex';
+  }
+
+  function showDeviceQR() {
+    const token = getDeviceToken();
+    const shortCode = tokenToShortCode(token);
+    const canvas = document.getElementById('qrCanvas');
+    canvas.innerHTML = '';
+    new QRCode(canvas, {
+      text:         token,
+      width:        256, height: 256,
+      colorDark:    '#000', colorLight: '#fff',
+      correctLevel: QRCode.CorrectLevel.H
+    });
+    document.getElementById('qrShortCode').textContent = shortCode;
+    document.getElementById('qrModal').classList.add('open');
+  }
+
+  // Derive a stable 4-char letters-only code from the device token
+  function tokenToShortCode(token) {
+    let hash = 0;
+    for (let i = 0; i < token.length; i++) {
+      hash = ((hash << 5) - hash) + token.charCodeAt(i);
+      hash |= 0;
+    }
+    hash = Math.abs(hash);
+    const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O to avoid confusion
+    let code = '';
+    for (let i = 0; i < 4; i++) {
+      code += letters[hash % letters.length];
+      hash = Math.floor(hash / letters.length);
+    }
+    return code;
+  }
+
+  function closeQR(e) {
+    if (!e || e.target.id === 'qrModal' || e.target.tagName === 'BUTTON') {
+      document.getElementById('qrModal').classList.remove('open');
+    }
+  }
+
+  // ── Car list ──────────────────────────────────────────────────
+  function statusLabel(s) {
+    return s === 'legal' ? '✅ Legal' : s === 'not_legal' ? '❌ Not Legal' : '⏳ Pending';
+  }
+
+  function renderCarList() {
+    const list = getMyCars();
+    const el   = document.getElementById('carList');
+
+    if (!list.length) {
+      el.innerHTML = '<div class="empty-state">No cars registered from this device yet.</div>';
+      return;
+    }
+
+    el.innerHTML = list.map(car => `
+      <div class="car-list-item">
+        <img src="${car.image_url || ''}"
+             onerror="this.style.display='none'"
+             alt="${car.kid_name}" />
+        <div class="info">
+          <div class="num">#${car.car_number}</div>
+          <div class="name">${car.kid_name}</div>
+          <div style="margin-top:4px;">
+            <span class="badge badge-${car.legal_status}" id="badge_${car.id}">${statusLabel(car.legal_status)}</span>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:10px;">
+            <button class="btn btn-sm" style="background:var(--accent2); color:#fff;" onclick="openCarEdit('${car.id}')">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="openDelModal('${car.id}')">Delete</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    refreshStatuses(list.map(c => c.id));
+  }
+
+  async function refreshStatuses(ids) {
+    const { data } = await sb.from('cars').select('id,legal_status').in('id', ids);
+    if (!data) return;
+    const map = {};
+    data.forEach(r => map[r.id] = r.legal_status);
+    const list = getMyCars().map(c => ({ ...c, legal_status: map[c.id] || c.legal_status }));
+    localStorage.setItem(STORE_KEY, JSON.stringify(list));
+    list.forEach(car => {
+      const b = document.getElementById('badge_' + car.id);
+      if (b) { b.className = `badge badge-${car.legal_status}`; b.textContent = statusLabel(car.legal_status); }
+    });
+  }
+
+  // ── Edit car ──────────────────────────────────────────────────
+  let _editCarId = null;
+
+  function openCarEdit(carId) {
+    _editCarId = carId;
+    const car = getMyCars().find(c => c.id === carId);
+    if (!car) return;
+    document.getElementById('editKidName').value = car.kid_name;
+    document.getElementById('editCarImage').value = '';
+    document.getElementById('editPreviewWrap').style.display = 'none';
+    document.getElementById('editModal').classList.add('open');
+  }
+
+  document.getElementById('editCarImage').addEventListener('change', function () {
+    const file = this.files[0]; if (!file) return;
+    document.getElementById('editPreview').src = URL.createObjectURL(file);
+    document.getElementById('editPreviewWrap').style.display = 'block';
+  });
+
+  function closeEditModal(e) {
+    if (!e || e.target.id === 'editModal' || e.target.tagName === 'BUTTON') {
+      document.getElementById('editModal').classList.remove('open');
+    }
+  }
+
+  async function saveCarEdit() {
+    const newName = document.getElementById('editKidName').value.trim();
+    if (!newName) { toast('Name cannot be empty.', false); return; }
+
+    const btn = document.getElementById('editSaveBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+
+    try {
+      const fileEl = document.getElementById('editCarImage');
+      const file   = fileEl.files[0];
+      let patch = { kid_name: newName };
+
+      if (file) {
+        const ext      = file.name.split('.').pop();
+        const fileName = `car_${Date.now()}.${ext}`;
+        const { error: upErr } = await sb.storage.from('car-images')
+          .upload(fileName, file, { contentType: file.type, upsert: false });
+        if (upErr) throw upErr;
+        patch.image_url = sb.storage.from('car-images').getPublicUrl(fileName).data.publicUrl;
+      }
+
+      const { error } = await sb.from('cars').update(patch).eq('id', _editCarId);
+      if (error) throw error;
+
+      const list = getMyCars().map(c => c.id === _editCarId ? { ...c, ...patch } : c);
+      localStorage.setItem(STORE_KEY, JSON.stringify(list));
+      renderCarList();
+      document.getElementById('editModal').classList.remove('open');
+      toast('Car updated!');
+    } catch (err) {
+      toast('Update failed — ' + err.message, false);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Save Changes';
+    }
+  }
+
+  // ── Delete car ────────────────────────────────────────────────
+  let _deleteCarId = null;
+
+  function openDelModal(carId) {
+    _deleteCarId = carId;
+    document.getElementById('delCarOverlay').style.display = 'flex';
+  }
+
+  function closeDelModal() {
+    document.getElementById('delCarOverlay').style.display = 'none';
+    _deleteCarId = null;
+  }
+
+  async function confirmCarDelete() {
+    if (!_deleteCarId) return;
+    const btn = document.querySelector('#delCarOverlay button[onclick="confirmCarDelete()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
+    try {
+      const { error } = await sb.from('cars').delete().eq('id', _deleteCarId);
+      if (error) throw error;
+      const list = getMyCars().filter(c => c.id !== _deleteCarId);
+      localStorage.setItem(STORE_KEY, JSON.stringify(list));
+      renderCarList();
+      renderDeviceQR();
+      document.getElementById('delCarOverlay').style.display = 'none';
+      _deleteCarId = null;
+      toast('Car deleted.');
+    } catch (err) {
+      toast('Delete failed — ' + err.message, false);
+      if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
+    }
+  }
+
+  // ── Race Status ───────────────────────────────────────────────
+  async function loadRaceStatus() {
+    const myCars = getMyCars();
+    const card   = document.getElementById('raceStatusCard');
+    if (!myCars.length) { card.style.display = 'none'; return; }
+    card.style.display = 'block';
+    const el = document.getElementById('raceStatusBody');
+
+    const { data: state } = await sb.from('race_state')
+      .select('current_round_id, current_heat_id').eq('id', 1).single();
+
+    if (!state?.current_round_id) {
+      el.innerHTML = '<div class="empty-state">Racing hasn\'t started yet — check back soon!</div>';
+      return;
+    }
+
+    // All heats for current round, ordered
+    const { data: heats } = await sb.from('heats')
+      .select('id, heat_number, status')
+      .eq('round_id', state.current_round_id)
+      .order('heat_number');
+
+    const currentIdx = (heats || []).findIndex(h => h.id === state.current_heat_id);
+
+    // Entries for all non-completed heats (to find upcoming races)
+    const upcomingIds = (heats || []).filter(h => h.status !== 'completed').map(h => h.id);
+    const { data: futureEntries } = upcomingIds.length
+      ? await sb.from('heat_entries').select('heat_id, car_id').in('heat_id', upcomingIds)
+      : { data: [] };
+
+    // Next heat index (heats away) per car
+    const myIdSet = new Set(myCars.map(c => c.id));
+    const heatAwayFor = {};
+    (futureEntries || []).forEach(e => {
+      if (!myIdSet.has(e.car_id)) return;
+      const hIdx = heats.findIndex(h => h.id === e.heat_id);
+      if (hIdx === -1) return;
+      const away = hIdx - currentIdx;
+      if (heatAwayFor[e.car_id] === undefined || away < heatAwayFor[e.car_id])
+        heatAwayFor[e.car_id] = away;
+    });
+
+    // Standings — fetch points for all legal cars to rank everyone
+    const [{ data: results }, { data: allActive }, { data: myCarData }] = await Promise.all([
+      sb.from('heat_results')
+        .select('first_place_car, second_place_car, third_place_car, fourth_place_car, heats!inner(round_id)')
+        .eq('heats.round_id', state.current_round_id),
+      sb.from('cars').select('id').eq('eliminated', false),
+      sb.from('cars').select('id, eliminated').in('id', myCars.map(c => c.id))
+    ]);
+
+    const eliminatedSet = new Set((myCarData || []).filter(c => c.eliminated).map(c => c.id));
+
+    const pts = {};
+    (allActive || []).forEach(c => pts[c.id] = 0);
+    (results || []).forEach(r => {
+      if (pts[r.first_place_car]  !== undefined) pts[r.first_place_car]  += 1;
+      if (pts[r.second_place_car] !== undefined) pts[r.second_place_car] += 2;
+      if (pts[r.third_place_car]  !== undefined) pts[r.third_place_car]  += 3;
+      if (pts[r.fourth_place_car] !== undefined) pts[r.fourth_place_car] += 4;
+    });
+
+    const sorted = Object.entries(pts)
+      .filter(([, p]) => p > 0)
+      .sort((a, b) => a[1] - b[1]);
+    const rankOf = {};
+    sorted.forEach(([id], i) => rankOf[id] = i + 1);
+    const totalRanked = sorted.length;
+
+    el.innerHTML = myCars.map(car => {
+      // ── Eliminated car ────────────────────────────────────────
+      if (eliminatedSet.has(car.id)) {
+        return `
+          <div style="display:flex; align-items:center; gap:14px; padding:13px 0; border-bottom:1px solid var(--border); opacity:0.55;">
+            <div style="font-size:2rem; font-weight:900; color:var(--muted2); min-width:40px; text-align:center; text-decoration:line-through;">#${car.car_number}</div>
+            <div style="flex:1;">
+              <div style="font-weight:700; color:var(--muted2); text-decoration:line-through;">${car.kid_name}</div>
+              <div style="font-size:0.82rem; color:#dc2626; font-weight:700; margin-top:3px;">Eliminated — thanks for racing!</div>
+            </div>
+            <span class="badge" style="background:var(--danger); color:#fff; white-space:nowrap;">OUT</span>
+          </div>`;
+      }
+
+      const away = heatAwayFor[car.id];
+      let heatLine;
+      if (away === undefined)    heatLine = 'Done for this round';
+      else if (away === 0)       heatLine = '<strong style="color:var(--accent);">Racing NOW!</strong>';
+      else                       heatLine = `Races in <strong>${away}</strong> heat${away !== 1 ? 's' : ''}`;
+
+      const rank = rankOf[car.id];
+      const rankLine = rank
+        ? `<span style="font-weight:800; color:var(--accent2);">#${rank}</span><span style="font-size:0.8rem; color:var(--muted2);"> of ${totalRanked}</span>`
+        : '<span style="color:var(--muted2); font-size:0.85rem;">Not yet ranked</span>';
+
+      return `
+        <div style="display:flex; align-items:center; gap:14px; padding:13px 0; border-bottom:1px solid var(--border);">
+          <div style="font-size:2rem; font-weight:900; color:var(--accent); min-width:40px; text-align:center;">#${car.car_number}</div>
+          <div style="flex:1;">
+            <div style="font-weight:700;">${car.kid_name}</div>
+            <div style="font-size:0.85rem; color:var(--muted2); margin-top:3px;">${heatLine}</div>
+          </div>
+          <div style="text-align:right;">${rankLine}</div>
+        </div>`;
+    }).join('');
+  }
+
+  // ── Realtime: push legal_status changes to this device's badges ─
+  sb.channel('parent-cars')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cars' }, payload => {
+      const car = payload.new;
+      const badge = document.getElementById('badge_' + car.id);
+      if (!badge) return;
+      badge.className   = `badge badge-${car.legal_status}`;
+      badge.textContent = statusLabel(car.legal_status);
+      // keep localStorage in sync
+      const list = getMyCars().map(c => c.id === car.id ? { ...c, legal_status: car.legal_status } : c);
+      localStorage.setItem(STORE_KEY, JSON.stringify(list));
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'race_state' }, () => loadRaceStatus())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'heat_results' }, () => loadRaceStatus())
+    .subscribe();
+
+  // ── Email QR popup ───────────────────────────────────────────
+  function showEmailQrModal() {
+    document.getElementById('emailQrModal').classList.add('open');
+    document.getElementById('emailQrInput').focus();
+  }
+  function closeEmailQrModal(e) {
+    if (e && e.target !== document.getElementById('emailQrModal')) return;
+    document.getElementById('emailQrModal').classList.remove('open');
+  }
+
+  async function sendEmailFromPopup() {
+    const input = document.getElementById('emailQrInput');
+    const to = input.value.trim();
+    if (!to || !to.includes('@')) { input.focus(); return; }
+
+    const btn = document.getElementById('emailQrSendBtn');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+
+    try {
+      const deviceToken = getDeviceToken();
+      const shortCode   = tokenToShortCode(deviceToken);
+      console.log('[email] Invoking send-registration-email, shortCode:', shortCode, '| to:', to);
+      const { data: fnData, error: fnErr } = await sb.functions.invoke('send-registration-email', {
+        body: {
+          to,
+          device_token: deviceToken,
+          short_code:   shortCode,
+          reg_url:      location.href,
+        }
+      });
+      console.log('[email] Invoke result — data:', fnData, '| error:', fnErr);
+      if (fnErr) throw fnErr;
+      localStorage.setItem('derby_email_sent', '1');
+      document.getElementById('emailQrModal').classList.remove('open');
+      toast('Check-in QR sent to your email! 📧');
+    } catch (err) {
+      console.error('Email send failed (full):', err);
+      const msg = err?.message || String(err);
+      btn.disabled = false;
+      btn.textContent = '📧 Send QR Code';
+      toast('Email failed: ' + msg, false);
+    }
+  }
+
+  // Allow Enter key in email popup
+  document.getElementById('emailQrInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendEmailFromPopup();
+  });
+
+  // ── Init ─────────────────────────────────────────────
+  getDeviceToken(); // ensure token exists early
+  renderCarList();
+  renderDeviceQR();
+  loadRaceStatus();
+</script>
+</body>
+</html>

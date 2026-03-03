@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pinewood Derby — Setup</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f0f2f5; --surface: #fff; --border: #e2e6ea;
+      --accent: #d97706; --accent2: #2563eb;
+      --success: #16a34a; --danger: #dc2626;
+      --text: #111827; --muted: #6b7280; --muted2: #9ca3af;
+      --radius: 14px;
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg);
+           color: var(--text); min-height: 100vh; }
+
+    .header { background: #1a1e2e; color: #fff; padding: 24px 32px;
+              display: flex; align-items: center; gap: 14px; }
+    .header h1 { font-size: 1.4rem; font-weight: 800; letter-spacing: 1px; }
+    .header p  { color: #9ca3af; font-size: 0.85rem; margin-top: 2px; }
+
+    .wizard { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; }
+
+    /* Step bar */
+    .steps { display: flex; align-items: center; gap: 0; margin-bottom: 32px; }
+    .step  { display: flex; align-items: center; gap: 8px; font-size: 0.8rem;
+             font-weight: 700; color: var(--muted2); flex: 1; }
+    .step.active  { color: var(--accent2); }
+    .step.done    { color: var(--success); }
+    .step .num    { width: 28px; height: 28px; border-radius: 50%;
+                    background: var(--border); display: flex; align-items: center;
+                    justify-content: center; font-size: 0.75rem; font-weight: 900;
+                    flex-shrink: 0; }
+    .step.active .num { background: var(--accent2); color: #fff; }
+    .step.done   .num { background: var(--success); color: #fff; }
+    .step .line  { flex: 1; height: 2px; background: var(--border); margin: 0 6px; }
+    .step.done .line { background: var(--success); }
+
+    /* Panels */
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    h2 { font-size: 1.2rem; font-weight: 800; margin-bottom: 6px; }
+    .sub { font-size: 0.88rem; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
+
+    /* Choice cards */
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+             gap: 14px; margin-bottom: 24px; }
+    .card  { border: 2px solid var(--border); border-radius: var(--radius);
+             padding: 20px; cursor: pointer; transition: border-color .15s, box-shadow .15s;
+             background: var(--surface); position: relative; }
+    .card:hover   { border-color: var(--accent2); }
+    .card.selected { border-color: var(--accent2); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+    .card .badge { position: absolute; top: 12px; right: 12px; font-size: 0.65rem;
+                   font-weight: 700; padding: 3px 8px; border-radius: 100px;
+                   background: #eff6ff; color: var(--accent2); letter-spacing: .5px; }
+    .card .badge.warn { background: #fef3c7; color: #92400e; }
+    .card h3 { font-size: 1rem; font-weight: 800; margin-bottom: 8px; }
+    .card .pros, .card .cons { font-size: 0.78rem; line-height: 1.7; color: var(--muted); }
+    .card .pros li::before { content: "✅ "; }
+    .card .cons li::before { content: "⚠️ "; }
+    .card ul { padding-left: 4px; list-style: none; }
+
+    /* Warning banner */
+    .warn-box { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 10px;
+                padding: 14px 16px; font-size: 0.84rem; color: #92400e;
+                margin-bottom: 20px; display: none; line-height: 1.6; }
+    .warn-box.show { display: block; }
+
+    /* Form fields */
+    .field { margin-bottom: 16px; }
+    label  { display: block; font-weight: 700; font-size: 0.88rem; margin-bottom: 6px; }
+    input, select {
+      width: 100%; padding: 10px 14px; border: 1.5px solid var(--border);
+      border-radius: 8px; font-size: 0.95rem; background: var(--surface);
+      color: var(--text); outline: none;
+    }
+    input:focus, select:focus { border-color: var(--accent2); }
+    .field-hint { font-size: 0.77rem; color: var(--muted2); margin-top: 4px; }
+
+    .fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 500px) { .fields-grid { grid-template-columns: 1fr; } }
+
+    details { border: 1.5px solid var(--border); border-radius: 8px;
+              padding: 12px 16px; margin-top: 16px; }
+    summary { font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+    details .fields-grid { margin-top: 14px; }
+
+    /* Nav */
+    .nav { display: flex; justify-content: space-between; align-items: center;
+           margin-top: 24px; gap: 12px; }
+    .btn { padding: 12px 28px; border: none; border-radius: 8px; font-size: 0.95rem;
+           font-weight: 700; cursor: pointer; }
+    .btn-primary  { background: var(--accent2); color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-ghost    { background: var(--border); color: var(--muted); }
+    .btn-gold     { background: var(--accent); color: #1a1e2e; }
+    .btn-gold:hover { background: #b45309; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Done screen */
+    .done-box { background: var(--surface); border-radius: var(--radius);
+                padding: 40px 32px; text-align: center; }
+    .done-box .icon { font-size: 3rem; margin-bottom: 16px; }
+    .done-box h2    { margin-bottom: 10px; }
+    .done-box code  { display: inline-block; background: #1a1e2e; color: #f59e0b;
+                      padding: 12px 24px; border-radius: 8px; font-size: 1rem;
+                      font-weight: 700; margin: 16px 0; letter-spacing: 1px; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div style="font-size:2rem;">🏎️</div>
+  <div>
+    <h1>Pinewood Derby — Setup</h1>
+    <p>Click through to configure your race system. Takes about 2 minutes.</p>
+  </div>
+</div>
+
+<div class="wizard">
+
+  <!-- Step bar -->
+  <div class="steps">
+    <div class="step active" id="step-ind-1"><div class="num">1</div> <span>Backend</span><div class="line"></div></div>
+    <div class="step"        id="step-ind-2"><div class="num">2</div> <span>Frontend</span><div class="line"></div></div>
+    <div class="step"        id="step-ind-3"><div class="num">3</div> <span>Scoring</span><div class="line"></div></div>
+    <div class="step"        id="step-ind-4"><div class="num">4</div> <span>Network</span><div class="line"></div></div>
+    <div class="step"        id="step-ind-5"><div class="num">5</div> <span>Details</span></div>
+  </div>
+
+  <!-- ── Step 1: Backend ────────────────────────────────────── -->
+  <div class="panel active" id="panel-1">
+    <h2>Where will the race data live?</h2>
+    <p class="sub">The backend stores all your cars, heats, and results. Pick based on your setup.</p>
+    <div class="cards">
+      <div class="card" id="card-supabase" onclick="pick('backend','supabase',this)">
+        <span class="badge">Cloud</span>
+        <h3>☁️ Supabase</h3>
+        <ul class="pros">
+          <li>Free tier available</li>
+          <li>No local server needed</li>
+          <li>Works anywhere with internet</li>
+          <li>Email + file storage included</li>
+        </ul>
+        <ul class="cons" style="margin-top:8px;">
+          <li>Requires internet connection</li>
+          <li>Needs a free Supabase account</li>
+        </ul>
+      </div>
+      <div class="card" id="card-local" onclick="pick('backend','local',this)">
+        <span class="badge">Local</span>
+        <h3>🖥️ Local (SQLite + Python)</h3>
+        <ul class="pros">
+          <li>Fully offline — no internet needed</li>
+          <li>Runs on Raspberry Pi or any PC</li>
+          <li>No account required</li>
+          <li>GPIO sensor support</li>
+        </ul>
+        <ul class="cons" style="margin-top:8px;">
+          <li>Python must be running</li>
+          <li>File storage is local only</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Supabase fields -->
+    <div id="supabase-fields" style="display:none;">
+      <div class="fields-grid">
+        <div class="field">
+          <label>Supabase Project URL</label>
+          <input id="supabase_url" type="url" placeholder="https://xxxx.supabase.co" />
+        </div>
+        <div class="field">
+          <label>Anon (Public) Key</label>
+          <input id="supabase_anon_key" type="text" placeholder="eyJhbGci..." />
+        </div>
+      </div>
+    </div>
+    <!-- Local fields -->
+    <div id="local-fields" style="display:none;">
+      <div class="fields-grid">
+        <div class="field">
+          <label>Host</label>
+          <input id="local_host" type="text" value="0.0.0.0" />
+          <p class="field-hint">Use 0.0.0.0 to accept connections from other devices on your network</p>
+        </div>
+        <div class="field">
+          <label>Port</label>
+          <input id="local_port" type="number" value="8080" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 2: Frontend ───────────────────────────────────── -->
+  <div class="panel" id="panel-2">
+    <h2>Where will the race pages be hosted?</h2>
+    <p class="sub">The frontend is the web interface parents, officials, and display screens use.</p>
+    <div id="https-warning" class="warn-box">
+      <strong>⚠️ HTTPS Warning</strong><br>
+      GitHub Pages forces HTTPS. A local backend (on your PC or Pi) runs plain HTTP.
+      Browsers <strong>block</strong> HTTP requests from HTTPS pages as "mixed content."<br><br>
+      To use this combination you need: your own domain with HTTPS on the local server
+      (e.g. via Cloudflare Tunnel), <em>or</em> enable Chrome's experimental
+      "Insecure origins treated as secure" flag.<br><br>
+      <strong>Recommended:</strong> Switch to <em>Local frontend</em> when using a local backend.
+    </div>
+    <div class="cards">
+      <div class="card" id="card-github_pages" onclick="pick('frontend','github_pages',this)">
+        <span class="badge">Cloud</span>
+        <h3>🌐 GitHub Pages</h3>
+        <ul class="pros">
+          <li>Free hosting, public URL</li>
+          <li>No server to run for the UI</li>
+          <li>Works from any device worldwide</li>
+        </ul>
+        <ul class="cons" style="margin-top:8px;">
+          <li>Requires internet to load pages</li>
+          <li>⚠️ HTTPS issue with local backend</li>
+        </ul>
+      </div>
+      <div class="card" id="card-local_frontend" onclick="pick('frontend','local_frontend',this)">
+        <span class="badge">Local</span>
+        <h3>📡 Local (served by this device)</h3>
+        <ul class="pros">
+          <li>Fully offline capable</li>
+          <li>No internet needed at the venue</li>
+          <li>Works on Pi hotspot</li>
+        </ul>
+        <ul class="cons" style="margin-top:8px;">
+          <li>Python server must be running</li>
+          <li>Only accessible on local network</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 3: Scoring ────────────────────────────────────── -->
+  <div class="panel" id="panel-3">
+    <h2>How will race results be recorded?</h2>
+    <p class="sub">Choose how finish order is captured — manually by officials, or automatically by sensors.</p>
+    <div class="cards">
+      <div class="card" id="card-heat" onclick="pick('scoring','heat',this)">
+        <span class="badge">Manual</span>
+        <h3>📋 Heat / Round System</h3>
+        <ul class="pros">
+          <li>No extra hardware needed</li>
+          <li>Officials tap finish order on screen</li>
+          <li>Works everywhere</li>
+        </ul>
+      </div>
+      <div class="card" id="card-sensor_remote" onclick="pick('scoring','sensor_remote',this)">
+        <span class="badge">External sensor</span>
+        <h3>📡 Sensor Bridge (ESP32)</h3>
+        <ul class="pros">
+          <li>Automatic timing</li>
+          <li>ESP32 POSTs results over WiFi</li>
+          <li>Works with any backend</li>
+        </ul>
+        <ul class="cons" style="margin-top:8px;">
+          <li>Requires ESP32 + IR sensors</li>
+        </ul>
+      </div>
+      <div class="card" id="card-sensor_gpio" onclick="pick('scoring','sensor_gpio',this)">
+        <span class="badge warn">GPIO / Pi only</span>
+        <h3>🔌 Sensor Bridge (GPIO, same device)</h3>
+        <ul class="pros">
+          <li>No second device needed</li>
+          <li>IR sensors wired directly to Pi</li>
+          <li>Lowest latency</li>
+        </ul>
+        <ul class="cons" style="margin-top:8px;">
+          <li>Requires Raspberry Pi or Linux with GPIO</li>
+          <li>Local backend only</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- GPIO pin config -->
+    <div id="gpio-fields" style="display:none;">
+      <div class="fields-grid">
+        <div class="field">
+          <label>Lane 1 GPIO Pin (BCM)</label>
+          <input id="lane_pin_1" type="number" value="17" />
+        </div>
+        <div class="field">
+          <label>Lane 2 GPIO Pin (BCM)</label>
+          <input id="lane_pin_2" type="number" value="27" />
+        </div>
+        <div class="field">
+          <label>Lane 3 GPIO Pin (BCM)</label>
+          <input id="lane_pin_3" type="number" value="22" />
+        </div>
+        <div class="field">
+          <label>Lane 4 GPIO Pin (BCM)</label>
+          <input id="lane_pin_4" type="number" value="23" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 4: Network ────────────────────────────────────── -->
+  <div class="panel" id="panel-4">
+    <h2>Network setup</h2>
+    <p class="sub">Optionally make this device broadcast its own WiFi network so race devices connect directly.</p>
+
+    <div id="hotspot-na" class="warn-box show">
+      ℹ️ Hotspot is only available when using a local backend.
+      Switch to local backend in step 1 to enable this option.
+    </div>
+
+    <div id="hotspot-options" style="display:none;">
+      <div class="cards">
+        <div class="card selected" id="card-hotspot-off" onclick="pick('hotspot','off',this)">
+          <h3>📶 No hotspot (use existing WiFi)</h3>
+          <p class="pros" style="margin-top:8px;font-size:0.82rem;color:var(--muted);">
+            Devices connect to the existing WiFi and access the race server by IP or <code>derby.local</code>
+          </p>
+        </div>
+        <div class="card" id="card-hotspot-regular" onclick="pick('hotspot','regular',this)">
+          <span class="badge">Hotspot</span>
+          <h3>📡 Regular hotspot</h3>
+          <p style="margin-top:8px;font-size:0.82rem;color:var(--muted);">
+            Pi broadcasts a WiFi network. Devices connect to it, then navigate to
+            <strong>derby.local</strong> or the Pi's IP address.
+          </p>
+        </div>
+        <div class="card" id="card-hotspot-captive" onclick="pick('hotspot','captive_portal',this)">
+          <span class="badge">Captive portal</span>
+          <h3>🌐 Captive portal</h3>
+          <p style="margin-top:8px;font-size:0.82rem;color:var(--muted);">
+            Pi broadcasts WiFi. Any URL a device visits <em>automatically redirects</em> to the
+            race app — like hotel WiFi. Requires root (<code>sudo python3 run.py</code>).
+          </p>
+        </div>
+      </div>
+      <div class="field" id="ssid-field" style="display:none;">
+        <label>WiFi Network Name (SSID)</label>
+        <input id="hotspot_ssid" type="text" value="PinewoodDerby" maxlength="32" />
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 5: Details ────────────────────────────────────── -->
+  <div class="panel" id="panel-5">
+    <h2>Race details</h2>
+    <p class="sub">Name, lanes, PINs, and optional email settings.</p>
+    <div class="fields-grid">
+      <div class="field">
+        <label>Track / Event Name</label>
+        <input id="track_name" type="text" value="Pinewood Derby" maxlength="60" />
+      </div>
+      <div class="field">
+        <label>Number of Lanes</label>
+        <select id="num_lanes">
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4" selected>4</option>
+          <option value="6">6</option>
+          <option value="8">8</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Admin PIN (4 digits)</label>
+        <input id="admin_pin" type="tel" maxlength="4" value="2468" placeholder="2468"
+               pattern="[0-9]{4}" />
+        <p class="field-hint">Used by race officials</p>
+      </div>
+      <div class="field">
+        <label>Settings PIN (4 digits)</label>
+        <input id="settings_pin" type="tel" maxlength="4" value="1357" placeholder="1357"
+               pattern="[0-9]{4}" />
+        <p class="field-hint">Used for email and server settings</p>
+      </div>
+    </div>
+
+    <details id="email-section">
+      <summary>📧 Email Settings (optional)</summary>
+      <div class="fields-grid">
+        <div class="field">
+          <label>SMTP Host</label>
+          <input id="smtp_host" type="text" value="smtp.zoho.eu" />
+        </div>
+        <div class="field">
+          <label>SMTP Port</label>
+          <input id="smtp_port" type="number" value="587" />
+        </div>
+        <div class="field">
+          <label>SMTP Username</label>
+          <input id="smtp_user" type="email" placeholder="you@example.com" />
+        </div>
+        <div class="field">
+          <label>SMTP Password</label>
+          <input id="smtp_password" type="password" placeholder="••••••" />
+        </div>
+        <div class="field">
+          <label>From Name</label>
+          <input id="smtp_from_name" type="text" value="Pinewood Derby" />
+        </div>
+        <div class="field">
+          <label>From Email Address</label>
+          <input id="smtp_from_address" type="email" placeholder="derby@example.com" />
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <!-- ── Done screen ───────────────────────────────────────── -->
+  <div class="panel" id="panel-done">
+    <div class="done-box">
+      <div class="icon">🏁</div>
+      <h2>Setup Complete!</h2>
+      <p style="color:var(--muted);font-size:0.9rem;margin-top:8px;">
+        Your config has been saved. Start the race server with:
+      </p>
+      <code>python3 run.py</code>
+      <p style="font-size:0.82rem;color:var(--muted2);margin-top:8px;">
+        Re-run <strong>python3 setup.py</strong> at any time to change settings.
+      </p>
+    </div>
+  </div>
+
+  <!-- Navigator -->
+  <div class="nav" id="nav-bar">
+    <button class="btn btn-ghost" id="prevBtn" onclick="prevStep()" style="display:none;">← Back</button>
+    <span></span>
+    <button class="btn btn-primary" id="nextBtn" onclick="nextStep()">Next →</button>
+    <button class="btn btn-gold"    id="finishBtn" onclick="finish()" style="display:none;">🏁 Save & Finish</button>
+  </div>
+
+</div><!-- /wizard -->
+
+<script>
+const TOTAL   = 5;
+let   current = 1;
+
+const state = {
+  backend:  null,
+  frontend: null,
+  scoring:  null,
+  hotspot:  "off",
+};
+
+// Pre-fill from existing config.json if available
+(async () => {
+  try {
+    const r = await fetch("/api/existing-config");
+    if (r.ok) {
+      const cfg = await r.json();
+      prefill(cfg);
+    }
+  } catch {}
+})();
+
+function prefill(cfg) {
+  if (cfg.backend_mode)  pick('backend', cfg.backend_mode, document.getElementById('card-' + cfg.backend_mode));
+  if (cfg.frontend_mode) pick('frontend', cfg.frontend_mode === 'local' ? 'local_frontend' : cfg.frontend_mode, document.getElementById('card-' + (cfg.frontend_mode === 'local' ? 'local_frontend' : cfg.frontend_mode)));
+  if (cfg.scoring_mode)  pick('scoring', cfg.scoring_mode, document.getElementById('card-' + cfg.scoring_mode));
+  if (cfg.hotspot_mode)  pick('hotspot', cfg.hotspot_mode, document.getElementById('card-hotspot-' + cfg.hotspot_mode));
+  ['supabase_url','supabase_anon_key','local_host','local_port',
+   'track_name','admin_pin','settings_pin','hotspot_ssid',
+   'smtp_host','smtp_port','smtp_user','smtp_password','smtp_from_name','smtp_from_address'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && cfg[id] !== undefined) el.value = cfg[id];
+  });
+  const nl = document.getElementById('num_lanes');
+  if (nl && cfg.num_lanes) nl.value = cfg.num_lanes;
+}
+
+function pick(group, value, card) {
+  if (!card) return;
+  // Deselect siblings
+  const sel = {
+    backend:  ['card-supabase','card-local'],
+    frontend: ['card-github_pages','card-local_frontend'],
+    scoring:  ['card-heat','card-sensor_remote','card-sensor_gpio'],
+    hotspot:  ['card-hotspot-off','card-hotspot-regular','card-hotspot-captive'],
+  }[group] || [];
+  sel.forEach(id => document.getElementById(id)?.classList.remove('selected'));
+  card.classList.add('selected');
+  state[group] = value;
+
+  // Show/hide dependent fields
+  if (group === 'backend') {
+    document.getElementById('supabase-fields').style.display = value === 'supabase' ? 'block' : 'none';
+    document.getElementById('local-fields').style.display    = value === 'local'    ? 'block' : 'none';
+    // Update hotspot availability
+    const na      = document.getElementById('hotspot-na');
+    const hopts   = document.getElementById('hotspot-options');
+    if (value === 'local') { na.classList.remove('show'); hopts.style.display = 'block'; }
+    else                   { na.classList.add('show');    hopts.style.display = 'none'; }
+    // Update HTTPS warning
+    updateHttpsWarning();
+  }
+  if (group === 'frontend') updateHttpsWarning();
+  if (group === 'scoring') {
+    document.getElementById('gpio-fields').style.display =
+      value === 'sensor_gpio' ? 'block' : 'none';
+  }
+  if (group === 'hotspot') {
+    document.getElementById('ssid-field').style.display =
+      (value === 'regular' || value === 'captive_portal') ? 'block' : 'none';
+  }
+}
+
+function updateHttpsWarning() {
+  const warn = document.getElementById('https-warning');
+  const show = state.backend === 'local' && state.frontend === 'github_pages';
+  warn.classList.toggle('show', show);
+}
+
+function gotoStep(n) {
+  for (let i = 1; i <= TOTAL; i++) {
+    document.getElementById('panel-' + i).classList.toggle('active', i === n);
+    const ind = document.getElementById('step-ind-' + i);
+    ind.classList.toggle('active', i === n);
+    ind.classList.toggle('done',   i < n);
+  }
+  document.getElementById('panel-done').classList.remove('active');
+  current = n;
+  document.getElementById('prevBtn').style.display  = n > 1        ? 'inline-block' : 'none';
+  document.getElementById('nextBtn').style.display  = n < TOTAL    ? 'inline-block' : 'none';
+  document.getElementById('finishBtn').style.display = n === TOTAL ? 'inline-block' : 'none';
+
+  // Skip network step for supabase backend (hotspot not applicable)
+  if (n === 4 && state.backend === 'supabase') {
+    const dir = current > 4 ? -1 : 1;
+    gotoStep(n + dir);
+  }
+}
+
+function nextStep() { gotoStep(Math.min(current + 1, TOTAL)); }
+function prevStep() { gotoStep(Math.max(current - 1, 1)); }
+
+async function finish() {
+  const btn = document.getElementById('finishBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  const cfg = {
+    track_name:       document.getElementById('track_name').value.trim() || 'Pinewood Derby',
+    num_lanes:        parseInt(document.getElementById('num_lanes').value) || 4,
+    backend_mode:     state.backend   || 'supabase',
+    frontend_mode:    state.frontend === 'local_frontend' ? 'local' : (state.frontend || 'github_pages'),
+    scoring_mode:     state.scoring   || 'heat',
+    hotspot_mode:     state.hotspot   || 'off',
+    hotspot_ssid:     document.getElementById('hotspot_ssid').value.trim() || 'PinewoodDerby',
+    admin_pin:        document.getElementById('admin_pin').value || '2468',
+    settings_pin:     document.getElementById('settings_pin').value || '1357',
+    supabase_url:     document.getElementById('supabase_url').value.trim(),
+    supabase_anon_key:document.getElementById('supabase_anon_key').value.trim(),
+    local_host:       document.getElementById('local_host').value.trim() || '0.0.0.0',
+    local_port:       parseInt(document.getElementById('local_port').value) || 8080,
+    smtp_host:        document.getElementById('smtp_host').value.trim(),
+    smtp_port:        parseInt(document.getElementById('smtp_port').value) || 587,
+    smtp_user:        document.getElementById('smtp_user').value.trim(),
+    smtp_password:    document.getElementById('smtp_password').value,
+    smtp_from_name:   document.getElementById('smtp_from_name').value.trim(),
+    smtp_from_address:document.getElementById('smtp_from_address').value.trim(),
+    email_enabled:    !!(document.getElementById('smtp_user').value.trim()),
+  };
+
+  if (cfg.scoring_mode === 'sensor_gpio') {
+    cfg.lane_pins = [1,2,3,4].map(i =>
+      parseInt(document.getElementById('lane_pin_' + i)?.value) || [17,27,22,23][i-1]);
+  }
+
+  try {
+    const r = await fetch('/api/setup', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(cfg),
+    });
+    if (!r.ok) throw new Error('Server error');
+    // Show done panel
+    for (let i = 1; i <= TOTAL; i++)
+      document.getElementById('panel-' + i).classList.remove('active');
+    document.getElementById('panel-done').classList.add('active');
+    document.getElementById('nav-bar').style.display = 'none';
+    for (let i = 1; i <= TOTAL; i++)
+      document.getElementById('step-ind-' + i).classList.add('done');
+  } catch (e) {
+    btn.disabled = false; btn.textContent = '🏁 Save & Finish';
+    alert('Error saving config: ' + e.message);
+  }
+}
+
+// Init
+gotoStep(1);
+</script>
+</body>
+</html>

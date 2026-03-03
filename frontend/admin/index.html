@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Hub — Pinewood Derby</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../config.js"></script>
+</head>
+<body>
+
+<!-- PIN gate -->
+<div id="pinGate" style="position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;">
+  <div style="text-align:center;max-width:300px;padding:20px;">
+    <h2 style="margin-bottom:8px;">Admin Access</h2>
+    <p style="margin-bottom:16px;">Enter the 4-digit PIN</p>
+    <input type="tel" id="pinInput" maxlength="4" placeholder="••••" autocomplete="off"
+           style="text-align:center;font-size:2rem;letter-spacing:12px;width:160px;margin:0 auto 16px;display:block;" />
+    <p id="pinErr" style="color:var(--danger);font-size:0.82rem;min-height:1.4em;"></p>
+  </div>
+</div>
+<script>
+(function(){
+  const PIN=(typeof CONFIG!=='undefined'&&CONFIG.admin_pin)||'2468',KEY='derby_admin_pin';
+  if(localStorage.getItem(KEY)===PIN){document.getElementById('pinGate').style.display='none';}
+  else{document.getElementById('pinInput').addEventListener('input',function(){if(this.value.length===4){if(this.value===PIN){localStorage.setItem(KEY,PIN);document.getElementById('pinGate').style.display='none';}else{document.getElementById('pinErr').textContent='Wrong PIN';this.value='';}}});document.getElementById('pinInput').focus();}
+})();
+</script>
+
+<nav class="top-nav">
+  <span class="brand">Derby</span>
+  <a href="index.html" class="active">Hub</a>
+  <a href="inspection.html">Inspection</a>
+  <a href="track.html">Track</a>
+  <a href="results.html">Officials</a>
+  <a href="cars.html">Cars</a>
+  <a href="announcer.html">Screen</a>
+  <a href="settings.html">⚙ Settings</a>
+</nav>
+
+<div class="container">
+  <div class="page-header" style="margin-top:24px;">
+    <div class="title-block">
+      <h1>Race Control</h1>
+      <p>Select a station below to open it on this device.</p>
+    </div>
+  </div>
+
+  <!-- Status strip -->
+  <div class="card" id="statusCard">
+    <div class="card-title">Event Status</div>
+    <div class="status-bar" id="statusBody">
+      <span class="spinner"></span>
+    </div>
+  </div>
+
+  <!-- Station cards -->
+  <div class="station-grid">
+
+    <a href="inspection.html" class="station-card">
+      <span class="icon">🔍</span>
+      <h3>Inspection</h3>
+      <p>Scan QR, approve / reject cars</p>
+    </a>
+
+    <a href="track.html" class="station-card">
+      <span class="icon">🛤️</span>
+      <h3>Track</h3>
+      <p>Browse lane assignments for each heat</p>
+    </a>
+
+    <a href="results.html" class="station-card">
+      <span class="icon">🏁</span>
+      <h3>Race Officials</h3>
+      <p>Heat control, results entry, round management</p>
+    </a>
+
+    <a href="cars.html" class="station-card">
+      <span class="icon">🚗</span>
+      <h3>Cars</h3>
+      <p>View and edit all car data</p>
+    </a>
+
+  </div>
+
+  <!-- Quick car list -->
+  <div class="card" style="margin-top:24px;">
+    <div class="card-title">All Registered Cars (<span id="carCount">0</span>)</div>
+    <div id="allCars"><span class="spinner"></span></div>
+  </div>
+
+</div>
+
+<script src="../config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="../lib/api.js"></script>
+<script>
+  const sb = createClient();
+
+  async function loadStatus() {
+    const [{ data: state }, { data: cars }] = await Promise.all([
+      sb.from('race_state').select('*,rounds(*),heats(*)').eq('id', 1).single(),
+      sb.from('cars').select('id, car_number, kid_name, legal_status, eliminated').order('car_number')
+    ]);
+
+    // Status strip
+    const round = state?.rounds;
+    const heat  = state?.heats;
+    document.getElementById('statusBody').innerHTML = `
+      <div class="stat-item">
+        <div class="stat-label">Round</div>
+        <div class="stat-val" style="color:var(--accent)">${round ? round.round_number : '—'}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Heat</div>
+        <div class="stat-val" style="color:var(--accent2)">${heat ? heat.heat_number : '—'}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Cars</div>
+        <div class="stat-val">${cars?.length ?? 0}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Legal</div>
+        <div class="stat-val" style="color:var(--success)">${cars?.filter(c => c.legal_status === 'legal').length ?? 0}</div>
+      </div>
+    `;
+
+    // Car list
+    document.getElementById('carCount').textContent = cars?.length ?? 0;
+    if (!cars?.length) {
+      document.getElementById('allCars').innerHTML =
+        '<div class="empty-state">No cars registered yet.</div>';
+      return;
+    }
+
+    document.getElementById('allCars').innerHTML = cars.map(car => `
+      <div class="car-list-item">
+        <div class="info">
+          <div class="num">#${car.car_number}</div>
+          <div class="name">${car.kid_name}</div>
+        </div>
+        <span class="badge badge-${car.legal_status}">
+          ${car.legal_status === 'legal' ? '✅ Legal' :
+            car.legal_status === 'not_legal' ? '❌ Not Legal' : '⏳ Pending'}
+        </span>
+        ${car.eliminated ? '<span class="badge badge-pending">Eliminated</span>' : ''}
+      </div>
+    `).join('');
+  }
+
+  loadStatus();
+</script>
+</body>
+</html>

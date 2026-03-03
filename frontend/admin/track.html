@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Track — Pinewood Derby</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../config.js"></script>
+</head>
+<body>
+
+<!-- PIN gate -->
+<div id="pinGate" style="position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;">
+  <div style="text-align:center;max-width:300px;padding:20px;">
+    <h2 style="margin-bottom:8px;">Admin Access</h2>
+    <p style="margin-bottom:16px;">Enter the 4-digit PIN</p>
+    <input type="tel" id="pinInput" maxlength="4" placeholder="••••" autocomplete="off"
+           style="text-align:center;font-size:2rem;letter-spacing:12px;width:160px;margin:0 auto 16px;display:block;" />
+    <p id="pinErr" style="color:var(--danger);font-size:0.82rem;min-height:1.4em;"></p>
+  </div>
+</div>
+<script>
+(function(){
+  const PIN=(typeof CONFIG!=='undefined'&&CONFIG.admin_pin)||'2468',KEY='derby_admin_pin';
+  if(localStorage.getItem(KEY)===PIN){document.getElementById('pinGate').style.display='none';}
+  else{document.getElementById('pinInput').addEventListener('input',function(){if(this.value.length===4){if(this.value===PIN){localStorage.setItem(KEY,PIN);document.getElementById('pinGate').style.display='none';}else{document.getElementById('pinErr').textContent='Wrong PIN';this.value='';}}});document.getElementById('pinInput').focus();}
+})();
+</script>
+
+<nav class="top-nav">
+  <span class="brand">Derby</span>
+  <a href="index.html">Hub</a>
+  <a href="inspection.html">Inspection</a>
+  <a href="track.html" class="active">Track</a>
+  <a href="results.html">Officials</a>
+  <a href="cars.html">Cars</a>
+  <a href="announcer.html">Screen</a>
+  <a href="settings.html">⚙ Settings</a>
+</nav>
+
+<div class="container">
+
+  <!-- Heat browsing navigation -->
+  <div class="heat-nav">
+    <button class="btn btn-ghost" id="prevBtn" onclick="browse(-1)" style="min-width:56px;">◀</button>
+    <div class="heat-nav-label" id="heatNavLabel">Loading…</div>
+    <button class="btn btn-ghost" id="nextBtn" onclick="browse(1)"  style="min-width:56px;">▶</button>
+  </div>
+
+  <!-- Lane board -->
+  <div class="lane-board" id="laneBoard">
+    <div class="lane-card"><div class="lane-label">Lane 1</div><div class="car-number">—</div></div>
+    <div class="lane-card"><div class="lane-label">Lane 2</div><div class="car-number">—</div></div>
+    <div class="lane-card"><div class="lane-label">Lane 3</div><div class="car-number">—</div></div>
+    <div class="lane-card"><div class="lane-label">Lane 4</div><div class="car-number">—</div></div>
+  </div>
+
+  <div class="card" style="margin-top:4px; text-align:center;">
+    <button class="btn btn-ghost-danger" onclick="reraceHeat()">⚠ Re-race Current Heat</button>
+  </div>
+
+</div>
+
+<!-- Re-race banner -->
+<!-- Re-race confirm modal -->
+<div class="confirm-overlay" id="reraceOverlay">
+  <div class="confirm-box" style="max-width:380px; width:100%; text-align:center;">
+    <div style="font-size:2.2rem; font-weight:900; color:var(--danger); letter-spacing:2px; margin-bottom:8px;">⚠ RE-RACE</div>
+    <div id="reraceModalLabel" style="font-size:1.4rem; font-weight:800; margin-bottom:12px;"></div>
+    <p style="font-size:0.9rem; color:var(--muted2); margin-bottom:20px;">Results will be cleared and the heat reset for re-running.</p>
+    <div class="confirm-btns">
+      <button class="btn btn-ghost btn-full" onclick="document.getElementById('reraceOverlay').classList.remove('open')">Cancel</button>
+      <button class="btn btn-danger btn-full" onclick="confirmRerace()">⚠ Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Re-race broadcast banner -->
+<div id="reraceBanner" style="display:none; position:fixed; inset:0; z-index:999; background:rgba(220,38,38,0.96);
+     flex-direction:column; align-items:center; justify-content:center; text-align:center;
+     font-size:3.5rem; font-weight:900; letter-spacing:4px; color:#fff;">
+  ⚠ RE-RACE
+  <div id="reraceBannerLabel" style="font-size:1.3rem; font-weight:800; letter-spacing:2px; margin-top:8px;"></div>
+  <div style="font-size:1rem; letter-spacing:3px; margin-top:8px; opacity:.75;">Reset the track and re-run</div>
+</div>
+
+<script src="../config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="../lib/api.js"></script>
+<script>
+  const sb = createClient();
+
+  let allHeats      = [];  // [{id, heat_number, round_number, status}]
+  let viewIndex    = 0;    // index into allHeats we're currently viewing
+  let currentHeatId = null;
+
+  // ── Load all heats for current round ─────────────────────────
+  async function init() {
+    const { data: state } = await sb
+      .from('race_state')
+      .select('current_round_id, current_heat_id')
+      .eq('id', 1)
+      .single();
+
+    if (!state?.current_round_id) {
+      document.getElementById('heatNavLabel').textContent = 'No active round';
+      renderEmptyBoard();
+      return;
+    }
+
+    currentHeatId = state.current_heat_id;
+
+    const { data: heats } = await sb
+      .from('heats')
+      .select('id, heat_number, status, rounds(round_number)')
+      .eq('round_id', state.current_round_id)
+      .order('heat_number');
+
+    if (!heats?.length) {
+      document.getElementById('heatNavLabel').textContent = 'No heats yet';
+      renderEmptyBoard();
+      return;
+    }
+
+    allHeats = heats.map(h => ({
+      id:           h.id,
+      heat_number:  h.heat_number,
+      round_number: h.rounds?.round_number ?? '?',
+      status:       h.status
+    }));
+
+    // Default to current heat
+    const currentIdx = allHeats.findIndex(h => h.id === state.current_heat_id);
+    viewIndex = currentIdx >= 0 ? currentIdx : 0;
+
+    showHeat(viewIndex);
+  }
+
+  function browse(delta) {
+    const next = viewIndex + delta;
+    if (next < 0 || next >= allHeats.length) return;
+    viewIndex = next;
+    showHeat(viewIndex);
+  }
+
+  async function showHeat(idx) {
+    const h = allHeats[idx];
+
+    const heatState = h.id === currentHeatId ? 'current'
+                    : h.status === 'completed'  ? 'past'
+                    : 'future';
+
+    const label = document.getElementById('heatNavLabel');
+    label.textContent = `Round ${h.round_number} — Heat ${h.heat_number} (${idx + 1}/${allHeats.length})`;
+    label.className = 'heat-nav-label state-' + heatState;
+
+    document.getElementById('laneBoard').className = 'lane-board state-' + heatState;
+    document.getElementById('prevBtn').disabled = idx === 0;
+    document.getElementById('nextBtn').disabled = idx === allHeats.length - 1;
+
+    const { data: entries } = await sb
+      .from('heat_entries')
+      .select('lane_number, cars(car_number, kid_name)')
+      .eq('heat_id', h.id)
+      .order('lane_number');
+
+    const lanes = {};
+    (entries || []).forEach(e => lanes[e.lane_number] = e.cars);
+
+    document.getElementById('laneBoard').innerHTML = [1, 2, 3, 4].map(l => {
+      const car = lanes[l];
+      return `
+        <div class="lane-card">
+          <div class="lane-label">Lane ${l}</div>
+          <div class="car-number">${car ? car.car_number : '—'}</div>
+          <div class="kid-name">${car ? car.kid_name : ''}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function renderEmptyBoard() {
+    document.getElementById('laneBoard').innerHTML = [1,2,3,4].map(l => `
+      <div class="lane-card">
+        <div class="lane-label">Lane ${l}</div>
+        <div class="car-number">—</div>
+      </div>`).join('');
+  }
+
+  // ── Live state sync (no auto-navigate) ───────────────────────
+  // Updates currentHeatId + all heat statuses, then re-renders
+  // whatever heat the user is currently viewing (viewIndex unchanged).
+  async function refreshState() {
+    if (!allHeats.length) { await init(); return; }
+
+    // Fetch latest race_state
+    const { data: state } = await sb
+      .from('race_state')
+      .select('current_heat_id')
+      .eq('id', 1)
+      .single();
+    currentHeatId = state?.current_heat_id ?? null;
+
+    // Refresh statuses for all heats we know about
+    const { data: heats } = await sb
+      .from('heats')
+      .select('id, status')
+      .in('id', allHeats.map(h => h.id));
+    if (heats) {
+      heats.forEach(h => {
+        const i = allHeats.findIndex(a => a.id === h.id);
+        if (i >= 0) allHeats[i].status = h.status;
+      });
+    }
+
+    // Re-render current view (no viewIndex change)
+    showHeat(viewIndex);
+  }
+
+  // Realtime: immediate push when heat status or active heat changes
+  sb.channel('track-live')
+    .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'heats' },
+        payload => {
+          const i = allHeats.findIndex(h => h.id === payload.new.id);
+          if (i >= 0) { allHeats[i].status = payload.new.status; showHeat(viewIndex); }
+        })
+    .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'race_state' },
+        payload => {
+          if (payload.new.id === 1) { currentHeatId = payload.new.current_heat_id; showHeat(viewIndex); }
+        })
+    .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'heat_results' },
+        () => refreshState())
+    .subscribe();
+
+  // Fallback poll every 15 s in case Realtime misses an event
+  setInterval(refreshState, 15000);
+
+  // ── Re-race ───────────────────────────────────────────────────
+  function reraceHeat() {
+    if (!currentHeatId) { alert('No active heat.'); return; }
+    const h = allHeats.find(x => x.id === currentHeatId);
+    document.getElementById('reraceModalLabel').textContent =
+      `Round ${h?.round_number ?? '?'} — Heat ${h?.heat_number ?? '?'}`;
+    document.getElementById('reraceOverlay').classList.add('open');
+  }
+
+  async function confirmRerace() {
+    document.getElementById('reraceOverlay').classList.remove('open');
+    const h = allHeats.find(x => x.id === currentHeatId);
+    await sb.from('heat_results').delete().eq('heat_id', currentHeatId);
+    await sb.from('heats').update({ status: 'active' }).eq('id', currentHeatId);
+    sb.channel('rerace-control').send({ type: 'broadcast', event: 'rerace',
+      payload: { round: h?.round_number, heat: h?.heat_number } });
+    refreshState();
+  }
+
+  // Banner when re-race is triggered from any page
+  sb.channel('rerace-control')
+    .on('broadcast', { event: 'rerace' }, ({ payload }) => {
+      const b = document.getElementById('reraceBanner');
+      const lbl = document.getElementById('reraceBannerLabel');
+      lbl.textContent = (payload?.round != null)
+        ? `Round ${payload.round} — Heat ${payload.heat}` : '';
+      b.style.display = 'flex';
+      setTimeout(() => { b.style.display = 'none'; }, 6000);
+    })
+    .subscribe();
+
+  init();
+</script>
+</body>

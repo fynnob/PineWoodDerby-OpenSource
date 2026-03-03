@@ -1,0 +1,37 @@
+{
+  "_comment": "Copy this to config.json and edit it. Then run: python3 setup.py",
+
+  "track_name": "Pinewood Derby",
+  "num_lanes": 4,
+
+  "backend_mode": "supabase",
+  "_backend_mode_options": ["supabase", "local"],
+
+  "supabase_url": "https://YOUR_PROJECT.supabase.co",
+  "supabase_anon_key": "YOUR_ANON_KEY",
+  "supabase_service_key": "YOUR_SERVICE_KEY",
+
+  "local_host": "0.0.0.0",
+  "local_port": 8080,
+
+  "frontend_mode": "github_pages",
+  "_frontend_mode_options": ["github_pages", "local"],
+
+  "scoring_mode": "heat",
+  "_scoring_mode_options": ["heat", "sensor_remote", "sensor_gpio"],
+
+  "hotspot_mode": "off",
+  "_hotspot_mode_options": ["off", "regular", "captive_portal"],
+  "hotspot_ssid": "PinewoodDerby",
+
+  "admin_pin": "2468",
+  "settings_pin": "1357",
+
+  "email_enabled": false,
+  "smtp_host": "smtp.zoho.eu",
+  "smtp_port": 587,
+  "smtp_user": "",
+  "smtp_password": "",
+  "smtp_from_name": "Pinewood Derby",
+  "smtp_from_address": ""
+}
