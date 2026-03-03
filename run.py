@@ -5,11 +5,14 @@ Reads config.json and starts the correct combination of modules.
 
 Usage: python3 run.py
 """
-import json, sys, os, asyncio, subprocess, webbrowser, threading
+import json, sys, os, asyncio, subprocess, webbrowser, threading, signal, atexit, shutil
 from pathlib import Path
 
 ROOT       = Path(__file__).parent
 CONFIG_PATH = ROOT / "config.json"
+
+# Track cleanup actions so we can tear down hotspot / captive portal on exit
+_cleanup_actions: list = []
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -31,7 +34,29 @@ def check_deps():
         sys.exit(1)
 
 
-# ── Hotspot (Raspberry Pi / Linux) ───────────────────────────────
+def _run(cmd, check=False, quiet=False):
+    """Run a command, print stderr on failure, return CompletedProcess."""
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0 and not quiet:
+        label = " ".join(cmd[:3]) + ("…" if len(cmd) > 3 else "")
+        print(f"⚠️   Command failed ({label}): {r.stderr.strip() or r.stdout.strip()}")
+    if check and r.returncode != 0:
+        raise RuntimeError(r.stderr.strip())
+    return r
+
+
+def _cleanup():
+    """Run any registered cleanup actions (hotspot teardown, nftables flush)."""
+    for desc, fn in reversed(_cleanup_actions):
+        try:
+            fn()
+        except Exception as e:
+            print(f"⚠️   Cleanup ({desc}): {e}")
+
+
+# ── Hotspot via NetworkManager (nmcli) ───────────────────────────
+
+CON_NAME = "DerbyHotspot"
 
 def start_hotspot(config: dict):
     mode = config.get("hotspot_mode", "off")
@@ -41,14 +66,13 @@ def start_hotspot(config: dict):
     port = config.get("local_port", 8080)
 
     if os.geteuid() != 0:
-        # Try to re-exec with sudo so user-installed packages remain visible.
-        # Inject user site-packages into PYTHONPATH so root can find them.
+        # Re-exec with sudo, injecting user site-packages so deps are found
         import site
         user_site = site.getusersitepackages()
         env = os.environ.copy()
         existing = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = f"{user_site}:{existing}" if existing else user_site
-        print("📡  Hotspot requested — re-launching as root (Ctrl+C to cancel)...")
+        print("📡  Hotspot needs root — re-launching with sudo...")
         try:
             result = subprocess.run(
                 ["sudo", "-E", sys.executable] + sys.argv,
@@ -56,7 +80,6 @@ def start_hotspot(config: dict):
             )
             if result.returncode == 0:
                 sys.exit(0)
-            # sudo failed (e.g. wrong password, not in sudoers) — fall through
             print("⚠️   sudo failed (rc=%d). Hotspot disabled — continuing without it." % result.returncode)
         except FileNotFoundError:
             print("⚠️   sudo not available. Hotspot disabled — continuing without it.")
@@ -64,66 +87,79 @@ def start_hotspot(config: dict):
             sys.exit(0)
         return
 
-    # Check required tools are installed
-    import shutil
-    missing = [t for t in ("hostapd", "dnsmasq") if not shutil.which(t)]
-    if missing:
-        print(f"⚠️   Hotspot disabled — missing tools: {', '.join(missing)}")
-        print(f"    Install with:  sudo apt install {' '.join(missing)}")
+    # ── We are root. Use nmcli to create the hotspot. ─────────────
+    if not shutil.which("nmcli"):
+        print("⚠️   nmcli not found. Install NetworkManager for hotspot support.")
         return
 
-    print(f"📡  Starting WiFi hotspot '{ssid}'...")
+    print(f"📡  Starting WiFi hotspot '{ssid}' via NetworkManager...")
 
-    # Write hostapd config
-    hostapd_conf = f"""interface=wlan0
-driver=nl80211
-ssid={ssid}
-hw_mode=g
-channel=6
-wmm_enabled=0
-macaddr_acl=0
-auth_algs=1
-ignore_broadcast_ssid=0
-"""
-    # Write dnsmasq config
-    dnsmasq_conf = f"""interface=wlan0
-dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,24h
-address=/#/192.168.4.1
-"""
-    Path("/tmp/derby_hostapd.conf").write_text(hostapd_conf)
-    Path("/tmp/derby_dnsmasq.conf").write_text(dnsmasq_conf)
+    # Remove any stale connection with this name
+    _run(["nmcli", "con", "delete", CON_NAME], quiet=True)
 
-    cmds = [
-        ["ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0"],
-        ["ip", "link", "set", "wlan0", "up"],
-        ["hostapd", "-B", "/tmp/derby_hostapd.conf"],
-        ["dnsmasq", "--conf-file=/tmp/derby_dnsmasq.conf", "--no-daemon", "&"],
-    ]
+    # Create a new WiFi AP connection (open, no password)
+    r = _run([
+        "nmcli", "con", "add",
+        "type", "wifi",
+        "ifname", "wlan0",
+        "con-name", CON_NAME,
+        "autoconnect", "no",
+        "ssid", ssid,
+        "wifi.mode", "ap",
+        "wifi.band", "bg",
+        "wifi.channel", "6",
+        "ipv4.method", "shared",              # NM runs its own dnsmasq
+        "ipv4.addresses", "192.168.4.1/24",
+        "wifi-sec.key-mgmt", "none",          # open network (no password)
+    ])
+    if r.returncode != 0:
+        print("❌  Failed to create hotspot connection")
+        return
 
-    for cmd in cmds:
-        try:
-            subprocess.run(cmd, capture_output=True)
-        except FileNotFoundError as e:
-            print(f"⚠️   Hotspot command failed: {e}")
-            return
+    # Bring it up
+    r = _run(["nmcli", "con", "up", CON_NAME])
+    if r.returncode != 0:
+        print("❌  Failed to activate hotspot")
+        _run(["nmcli", "con", "delete", CON_NAME], quiet=True)
+        return
 
-    if mode == "captive_portal":
-        # Redirect all HTTP traffic to race app (optional — needs iptables)
-        import shutil
-        if shutil.which("iptables"):
-            subprocess.run(
-                ["iptables", "-t", "nat", "-A", "PREROUTING", "-i", "wlan0",
-                 "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-port", str(port)],
-                capture_output=True
-            )
-        else:
-            print("⚠️   iptables not found — captive portal redirect skipped")
-            print(f"    Clients must navigate to http://192.168.4.1:{port} manually")
+    # Register cleanup: tear down hotspot on exit
+    _cleanup_actions.append(("hotspot", lambda: (
+        _run(["nmcli", "con", "down", CON_NAME], quiet=True),
+        _run(["nmcli", "con", "delete", CON_NAME], quiet=True),
+    )))
 
     print(f"✅  Hotspot active — SSID: {ssid}")
+
+    # ── Captive portal via nftables ───────────────────────────────
     if mode == "captive_portal":
-        print(f"    Any device connecting to '{ssid}' will auto-open the race app")
-    else:
+        if not shutil.which("nft"):
+            print("⚠️   nft (nftables) not found — captive portal disabled")
+        else:
+            # DNS redirect: force all DNS queries to our dnsmasq (192.168.4.1)
+            # HTTP redirect: redirect port 80 → race server port
+            # HTTPS redirect: redirect port 443 → race server port
+            nft_rules = f"""
+table ip derby_captive {{
+    chain prerouting {{
+        type nat hook prerouting priority dstnat; policy accept;
+        iifname "wlan0" tcp dport 80 redirect to :{port}
+        iifname "wlan0" tcp dport 443 redirect to :{port}
+        iifname "wlan0" udp dport 53 dnat to 192.168.4.1:53
+    }}
+}}
+"""
+            Path("/tmp/derby_nft.conf").write_text(nft_rules)
+            r = _run(["nft", "-f", "/tmp/derby_nft.conf"])
+            if r.returncode == 0:
+                _cleanup_actions.append(("captive-portal", lambda: (
+                    _run(["nft", "delete", "table", "ip", "derby_captive"], quiet=True),
+                )))
+                print(f"✅  Captive portal active — devices will auto-redirect to the race app")
+            else:
+                print("⚠️   Failed to set up captive portal nftables rules")
+
+    if mode != "captive_portal":
         print(f"    Connect to '{ssid}', then open: http://192.168.4.1:{port}")
 
 
@@ -140,9 +176,14 @@ def setup_mdns(config: dict):
     <txt-record>path=/</txt-record>
   </service>
 </service-group>"""
+    svc_path = Path("/etc/avahi/services/pinewood-derby.service")
     try:
-        Path("/etc/avahi/services/pinewood-derby.service").write_text(service_xml)
+        svc_path.write_text(service_xml)
         subprocess.run(["systemctl", "restart", "avahi-daemon"], capture_output=True)
+        _cleanup_actions.append(("mdns", lambda: (
+            svc_path.unlink(missing_ok=True),
+            subprocess.run(["systemctl", "restart", "avahi-daemon"], capture_output=True),
+        )))
         print(f"✅  mDNS: reachable at http://derby.local:{port}")
     except Exception:
         pass  # avahi not available, skip silently
@@ -167,6 +208,15 @@ def start_gpio(config: dict, loop: asyncio.AbstractEventLoop,
 def main():
     config = load_config()
     check_deps()
+
+    # Register cleanup so hotspot / captive-portal are torn down on exit
+    atexit.register(_cleanup)
+    def _sig_handler(signum, frame):
+        print("\n🛑  Shutting down…")
+        _cleanup()
+        sys.exit(0)
+    signal.signal(signal.SIGINT, _sig_handler)
+    signal.signal(signal.SIGTERM, _sig_handler)
 
     backend_mode = config.get("backend_mode", "supabase")
     scoring_mode = config.get("scoring_mode", "heat")
