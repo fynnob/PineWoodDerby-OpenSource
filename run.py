@@ -98,6 +98,7 @@ def start_hotspot(config: dict):
     _run(["nmcli", "con", "delete", CON_NAME], quiet=True)
 
     # Create a new WiFi AP connection (open, no password)
+    # Do NOT pass any wifi-sec.* properties — omitting security entirely = open network
     r = _run([
         "nmcli", "con", "add",
         "type", "wifi",
@@ -105,12 +106,11 @@ def start_hotspot(config: dict):
         "con-name", CON_NAME,
         "autoconnect", "no",
         "ssid", ssid,
-        "wifi.mode", "ap",
-        "wifi.band", "bg",
-        "wifi.channel", "6",
-        "ipv4.method", "shared",              # NM runs its own dnsmasq
+        "802-11-wireless.mode", "ap",
+        "802-11-wireless.band", "bg",
+        "802-11-wireless.channel", "6",
+        "ipv4.method", "shared",              # NM runs its own DHCP + DNS
         "ipv4.addresses", "192.168.4.1/24",
-        "wifi-sec.key-mgmt", "none",          # open network (no password)
     ])
     if r.returncode != 0:
         print("❌  Failed to create hotspot connection")
