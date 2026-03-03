@@ -64,6 +64,14 @@ def start_hotspot(config: dict):
             sys.exit(0)
         return
 
+    # Check required tools are installed
+    import shutil
+    missing = [t for t in ("hostapd", "dnsmasq") if not shutil.which(t)]
+    if missing:
+        print(f"⚠️   Hotspot disabled — missing tools: {', '.join(missing)}")
+        print(f"    Install with:  sudo apt install {' '.join(missing)}")
+        return
+
     print(f"📡  Starting WiFi hotspot '{ssid}'...")
 
     # Write hostapd config
@@ -99,7 +107,11 @@ address=/#/192.168.4.1
         ]
 
     for cmd in cmds:
-        subprocess.run(cmd, capture_output=True)
+        try:
+            subprocess.run(cmd, capture_output=True)
+        except FileNotFoundError as e:
+            print(f"⚠️   Hotspot command failed: {e}")
+            return
 
     print(f"✅  Hotspot active — SSID: {ssid}")
     if mode == "captive_portal":
