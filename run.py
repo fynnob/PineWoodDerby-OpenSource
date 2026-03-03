@@ -99,12 +99,6 @@ address=/#/192.168.4.1
         ["hostapd", "-B", "/tmp/derby_hostapd.conf"],
         ["dnsmasq", "--conf-file=/tmp/derby_dnsmasq.conf", "--no-daemon", "&"],
     ]
-    if mode == "captive_portal":
-        # Redirect all HTTP traffic to race app
-        cmds += [
-            ["iptables", "-t", "nat", "-A", "PREROUTING", "-i", "wlan0",
-             "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-port", str(port)],
-        ]
 
     for cmd in cmds:
         try:
@@ -112,6 +106,19 @@ address=/#/192.168.4.1
         except FileNotFoundError as e:
             print(f"⚠️   Hotspot command failed: {e}")
             return
+
+    if mode == "captive_portal":
+        # Redirect all HTTP traffic to race app (optional — needs iptables)
+        import shutil
+        if shutil.which("iptables"):
+            subprocess.run(
+                ["iptables", "-t", "nat", "-A", "PREROUTING", "-i", "wlan0",
+                 "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-port", str(port)],
+                capture_output=True
+            )
+        else:
+            print("⚠️   iptables not found — captive portal redirect skipped")
+            print(f"    Clients must navigate to http://192.168.4.1:{port} manually")
 
     print(f"✅  Hotspot active — SSID: {ssid}")
     if mode == "captive_portal":
