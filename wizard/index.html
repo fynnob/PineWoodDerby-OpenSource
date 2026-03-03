@@ -281,23 +281,13 @@
 
     <!-- GPIO pin config -->
     <div id="gpio-fields" style="display:none;">
-      <div class="fields-grid">
-        <div class="field">
-          <label>Lane 1 GPIO Pin (BCM)</label>
-          <input id="lane_pin_1" type="number" value="17" />
-        </div>
-        <div class="field">
-          <label>Lane 2 GPIO Pin (BCM)</label>
-          <input id="lane_pin_2" type="number" value="27" />
-        </div>
-        <div class="field">
-          <label>Lane 3 GPIO Pin (BCM)</label>
-          <input id="lane_pin_3" type="number" value="22" />
-        </div>
-        <div class="field">
-          <label>Lane 4 GPIO Pin (BCM)</label>
-          <input id="lane_pin_4" type="number" value="23" />
-        </div>
+      <div class="field" style="max-width:200px;margin-bottom:16px;">
+        <label>Number of GPIO lanes</label>
+        <input id="gpio_lane_count" type="number" min="1" max="16" value="4"
+               oninput="renderGpioPins(this.value)" />
+      </div>
+      <div id="gpio-pin-rows" class="fields-grid">
+        <!-- rendered by renderGpioPins() -->
       </div>
     </div>
   </div>
@@ -497,13 +487,34 @@ function pick(group, value, card) {
   }
   if (group === 'frontend') updateHttpsWarning();
   if (group === 'scoring') {
-    document.getElementById('gpio-fields').style.display =
-      value === 'sensor_gpio' ? 'block' : 'none';
+    const show = value === 'sensor_gpio';
+    document.getElementById('gpio-fields').style.display = show ? 'block' : 'none';
+    if (show) renderGpioPins(document.getElementById('gpio_lane_count').value);
   }
   if (group === 'hotspot') {
     document.getElementById('ssid-field').style.display =
       (value === 'regular' || value === 'captive_portal') ? 'block' : 'none';
   }
+}
+
+// Default BCM pin suggestions for up to 16 lanes
+const DEFAULT_PINS = [17,27,22,23,24,25,5,6,12,13,16,19,20,21,26,18];
+
+function renderGpioPins(count) {
+  const n = Math.max(1, Math.min(16, parseInt(count) || 4));
+  const container = document.getElementById('gpio-pin-rows');
+  // Preserve existing values before re-rendering
+  const existing = {};
+  container.querySelectorAll('input[id^="lane_pin_"]').forEach(el => {
+    existing[el.id] = el.value;
+  });
+  let html = '';
+  for (let i = 1; i <= n; i++) {
+    const prev = existing['lane_pin_' + i];
+    const val  = prev !== undefined ? prev : (DEFAULT_PINS[i-1] ?? '');
+    html += `<div class="field"><label>Lane ${i} GPIO Pin (BCM)</label><input id="lane_pin_${i}" type="number" value="${val}" /></div>`;
+  }
+  container.innerHTML = html;
 }
 
 function updateHttpsWarning() {
@@ -563,8 +574,12 @@ async function finish() {
   };
 
   if (cfg.scoring_mode === 'sensor_gpio') {
-    cfg.lane_pins = [1,2,3,4].map(i =>
-      parseInt(document.getElementById('lane_pin_' + i)?.value) || [17,27,22,23][i-1]);
+    const gpioN = parseInt(document.getElementById('gpio_lane_count').value) || 4;
+    cfg.lane_pins = Array.from({length: gpioN}, (_, i) => {
+      const el = document.getElementById('lane_pin_' + (i+1));
+      return el ? (parseInt(el.value) || DEFAULT_PINS[i] || 0) : (DEFAULT_PINS[i] || 0);
+    });
+    cfg.num_lanes = gpioN;   // keep num_lanes consistent with pin count
   }
 
   try {
@@ -588,6 +603,7 @@ async function finish() {
 }
 
 // Init
+renderGpioPins(4);
 gotoStep(1);
 </script>
 </body>

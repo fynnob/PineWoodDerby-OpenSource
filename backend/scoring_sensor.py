@@ -44,16 +44,15 @@ class SensorScoring:
 
             place_fields = ["first_place_car","second_place_car",
                             "third_place_car","fourth_place_car"]
-            result_data = {"heat_id": heat_id}
-            for i, (lane_no, t) in enumerate(order):
-                if i < 4:
-                    result_data[place_fields[i]] = entry_by_lane.get(lane_no, "")
-                result_data[f"time_ms_lane{lane_no}"] = t
-
-            # Pad missing places if < 4 cars
-            for f in place_fields:
-                result_data.setdefault(f, "")
-
+            result_data = {
+                "heat_id": heat_id,
+                "results": [
+                    {"lane": lane_no, "time_ms": t,
+                     "car_id": entry_by_lane.get(lane_no),
+                     "place": i+1}
+                    for i, (lane_no, t) in enumerate(order)
+                ]
+            }
             return db.upsert_heat_result(result_data)
 
     def reset_heat(self, heat_id: str):

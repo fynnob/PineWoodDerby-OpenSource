@@ -36,6 +36,7 @@ def init_db(num_lanes: int = 4):
         CREATE TABLE IF NOT EXISTS rounds (
             id           TEXT PRIMARY KEY,
             round_number INTEGER UNIQUE NOT NULL,
+            name         TEXT NOT NULL DEFAULT '',
             status       TEXT NOT NULL DEFAULT 'pending'
                          CHECK (status IN ('pending','active','completed')),
             advance_count INTEGER,
@@ -63,14 +64,12 @@ def init_db(num_lanes: int = 4):
         CREATE TABLE IF NOT EXISTS heat_results (
             id               TEXT PRIMARY KEY,
             heat_id          TEXT NOT NULL REFERENCES heats(id) ON DELETE CASCADE UNIQUE,
-            first_place_car  TEXT NOT NULL REFERENCES cars(id),
-            second_place_car TEXT NOT NULL REFERENCES cars(id),
-            third_place_car  TEXT NOT NULL REFERENCES cars(id),
-            fourth_place_car TEXT NOT NULL REFERENCES cars(id),
-            time_ms_lane1    REAL,
-            time_ms_lane2    REAL,
-            time_ms_lane3    REAL,
-            time_ms_lane4    REAL,
+            round_id         TEXT REFERENCES rounds(id),
+            first_place_car  TEXT REFERENCES cars(id),
+            second_place_car TEXT REFERENCES cars(id),
+            third_place_car  TEXT REFERENCES cars(id),
+            fourth_place_car TEXT REFERENCES cars(id),
+            results_json     TEXT NOT NULL DEFAULT '[]',
             entered_at       TEXT NOT NULL
         );
 
@@ -147,16 +146,19 @@ def insert_round(data: dict) -> dict:
     with get_conn() as conn:
         rnum = (conn.execute("SELECT COALESCE(MAX(round_number),0)+1 FROM rounds").fetchone()[0])
         conn.execute(
-            "INSERT INTO rounds (id,round_number,status,advance_count,created_at) VALUES (?,?,?,?,?)",
-            (rid, rnum, data.get("status","pending"), data.get("advance_count"), _now())
+            "INSERT INTO rounds (id,round_number,name,status,advance_count,created_at) VALUES (?,?,?,?,?,?)",
+            (rid, rnum, data.get("name",""), data.get("status","pending"), data.get("advance_count"), _now())
         )
     with get_conn() as conn:
         return dict(conn.execute("SELECT * FROM rounds WHERE id=?", (rid,)).fetchone())
 
 def update_round(round_id: str, patch: dict) -> dict:
-    allowed = {"status","advance_count"}
+    allowed = {"name", "status", "advance_count"}
     patch   = {k: v for k, v in patch.items() if k in allowed}
-    if not patch: return {}
+    if not patch:
+        with get_conn() as conn:
+            r = conn.execute("SELECT * FROM rounds WHERE id=?", (round_id,)).fetchone()
+            return dict(r) if r else {}
     sets   = ", ".join(f"{k}=?" for k in patch)
     params = list(patch.values()) + [round_id]
     with get_conn() as conn:
@@ -230,11 +232,13 @@ def insert_heat_entries(entries: list) -> list:
     with get_conn() as conn:
         for e in entries:
             eid = str(uuid.uuid4())
+            # Accept both 'lane_number' and 'lane' for flexibility
+            lane = e.get("lane_number") or e.get("lane")
             conn.execute(
                 "INSERT INTO heat_entries (id,heat_id,lane_number,car_id) VALUES (?,?,?,?)",
-                (eid, e["heat_id"], e["lane_number"], e["car_id"])
+                (eid, e["heat_id"], lane, e["car_id"])
             )
-            result.append({"id": eid, **e})
+            result.append({"id": eid, "heat_id": e["heat_id"], "lane_number": lane, "car_id": e["car_id"]})
     return result
 
 def delete_heat_entries(heat_id: str):
@@ -246,7 +250,7 @@ def delete_heat_entries(heat_id: str):
 def get_heat_result(heat_id: str) -> dict | None:
     with get_conn() as conn:
         r = conn.execute("SELECT * FROM heat_results WHERE heat_id=?", (heat_id,)).fetchone()
-        return dict(r) if r else None
+        return _heat_result_to_dict(dict(r)) if r else None
 
 def list_heat_results(round_ids=None) -> list:
     with get_conn() as conn:
@@ -254,28 +258,79 @@ def list_heat_results(round_ids=None) -> list:
             if isinstance(round_ids, str):
                 round_ids = [round_ids]
             placeholders = ",".join("?" * len(round_ids))
-            return rows_to_dicts(conn.execute(
+            rows = rows_to_dicts(conn.execute(
                 f"SELECT hr.* FROM heat_results hr "
                 f"JOIN heats h ON h.id=hr.heat_id WHERE h.round_id IN ({placeholders})", round_ids).fetchall())
-        return rows_to_dicts(conn.execute("SELECT * FROM heat_results").fetchall())
+        else:
+            rows = rows_to_dicts(conn.execute("SELECT * FROM heat_results").fetchall())
+    return [_heat_result_to_dict(r) for r in rows]
+
+def _heat_result_to_dict(row: dict) -> dict:
+    """Augment a heat_results row: parse results_json, add place car fields."""
+    r = dict(row)
+    try:
+        results = json.loads(r.get("results_json") or "[]")
+    except Exception:
+        results = []
+    r["results"] = results
+    # Derive place fields from results list if not already present
+    by_place = {item.get("place"): item.get("car_id") for item in results if item.get("place")}
+    for i, field in enumerate(["first_place_car","second_place_car","third_place_car","fourth_place_car"], 1):
+        if not r.get(field):
+            r[field] = by_place.get(i)
+    return r
+
 
 def upsert_heat_result(data: dict) -> dict:
+    """Accepts two input formats:
+
+    New / sensor format::
+        {heat_id, round_id?, results: [{lane, time_ms, car_id?, place?}, ...]}
+
+    Legacy frontend format::
+        {heat_id, first_place_car, second_place_car, third_place_car, fourth_place_car}
+    """
     rid = str(uuid.uuid4())
+
+    if "results" in data and isinstance(data["results"], list):
+        # New format — results array already provided
+        results = data["results"]
+        # Derive place car IDs from sorted times if car_id is present
+        placed = sorted([r for r in results if "time_ms" in r], key=lambda x: x["time_ms"])
+        for i, item in enumerate(placed, 1):
+            item.setdefault("place", i)
+        by_place = {item.get("place"): item.get("car_id") for item in results if item.get("place")}
+        p1 = by_place.get(1); p2 = by_place.get(2)
+        p3 = by_place.get(3); p4 = by_place.get(4)
+    else:
+        # Legacy format — build results list from place fields and time_ms_laneN fields
+        p1 = data.get("first_place_car")  or None
+        p2 = data.get("second_place_car") or None
+        p3 = data.get("third_place_car")  or None
+        p4 = data.get("fourth_place_car") or None
+        results = []
+        for key, val in data.items():
+            if key.startswith("time_ms_lane"):
+                lane = int(key[len("time_ms_lane"):])
+                results.append({"lane": lane, "time_ms": val})
+        results.sort(key=lambda x: x["time_ms"])
+        for i, item in enumerate(results, 1):
+            item["place"] = i
+
+    results_json = json.dumps(results)
+    round_id = data.get("round_id")
+
     with get_conn() as conn:
         conn.execute("DELETE FROM heat_results WHERE heat_id=?", (data["heat_id"],))
         conn.execute(
             "INSERT INTO heat_results "
-            "(id,heat_id,first_place_car,second_place_car,third_place_car,fourth_place_car,"
-            " time_ms_lane1,time_ms_lane2,time_ms_lane3,time_ms_lane4,entered_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (rid, data["heat_id"],
-             data["first_place_car"], data["second_place_car"],
-             data["third_place_car"], data["fourth_place_car"],
-             data.get("time_ms_lane1"), data.get("time_ms_lane2"),
-             data.get("time_ms_lane3"), data.get("time_ms_lane4"),
-             _now())
+            "(id,heat_id,round_id,first_place_car,second_place_car,third_place_car,fourth_place_car,"
+            " results_json,entered_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (rid, data["heat_id"], round_id, p1, p2, p3, p4, results_json, _now())
         )
-        return dict(conn.execute("SELECT * FROM heat_results WHERE id=?", (rid,)).fetchone())
+        return _heat_result_to_dict(
+            dict(conn.execute("SELECT * FROM heat_results WHERE id=?", (rid,)).fetchone())
+        )
 
 def delete_heat_result(heat_id: str):
     with get_conn() as conn:

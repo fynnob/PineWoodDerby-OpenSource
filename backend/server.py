@@ -159,10 +159,13 @@ def create_app(config: dict) -> FastAPI:
         return db.list_heat_entries(heat_id if heat_id else None)
 
     @app.post("/api/heat_entries/bulk")
-    async def create_heat_entries(body: list):
+    async def create_heat_entries(request: Request):
+        body = await request.json()
+        if not isinstance(body, list):
+            raise HTTPException(400, detail="Expected a JSON array")
         entries = db.insert_heat_entries(body)
         await broadcast("heat_entries", "INSERT", {"count": len(entries)})
-        return entries
+        return {"count": len(entries), "entries": entries}
 
     @app.delete("/api/heat_entries/{heat_id}")
     async def remove_heat_entries(heat_id: str):
