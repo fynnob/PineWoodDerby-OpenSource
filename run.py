@@ -115,15 +115,42 @@ def start_hotspot(config: dict):
         print("❌  Failed to create hotspot connection")
         return
 
-    # Stop system dnsmasq so NetworkManager's internal DHCP can bind to port 67
-    _run(["systemctl", "stop", "dnsmasq"], quiet=True)
+    # Stop system dnsmasq so NetworkManager's internal DHCP can bind to port 67.
+    # dnsmasq is 'enabled' so systemd can restart it quickly — we poll until
+    # port 67 is actually free before continuing (avoids a race condition).
+    _dnsmasq_was_running = subprocess.run(
+        ["systemctl", "is-active", "--quiet", "dnsmasq"]
+    ).returncode == 0
+    if _dnsmasq_was_running:
+        print("📡  Stopping system dnsmasq so NM can use port 67...")
+        _run(["systemctl", "stop", "dnsmasq"])
+        # Poll up to 5 s for port 67 to be released
+        import time as _time
+        for _i in range(10):
+            r67 = subprocess.run(
+                ["ss", "-ulpn", "sport", "=", "67"],
+                capture_output=True, text=True
+            )
+            if "dnsmasq" not in r67.stdout and ":67" not in r67.stdout:
+                print("✅  Port 67 is free")
+                break
+            _time.sleep(0.5)
+        else:
+            print("⚠️   Port 67 still in use after 5 s — hotspot DHCP may fail")
+
+    # Also remove any stale NM connection file that may have a cached IP address
+    stale_file = Path("/etc/NetworkManager/system-connections") / f"{CON_NAME}.nmconnection"
+    if stale_file.exists():
+        stale_file.unlink()
+        _run(["systemctl", "reload", "NetworkManager"], quiet=True)
 
     # Bring it up
     r = _run(["nmcli", "con", "up", CON_NAME])
     if r.returncode != 0:
         print("❌  Failed to activate hotspot")
         _run(["nmcli", "con", "delete", CON_NAME], quiet=True)
-        _run(["systemctl", "start", "dnsmasq"], quiet=True)
+        if _dnsmasq_was_running:
+            _run(["systemctl", "start", "dnsmasq"], quiet=True)
         return
 
     # Register cleanup: tear down hotspot on exit, restart system dnsmasq
@@ -131,7 +158,8 @@ def start_hotspot(config: dict):
         _run(["nmcli", "con", "down", CON_NAME], quiet=True),
         _run(["nmcli", "con", "delete", CON_NAME], quiet=True),
     )))
-    _cleanup_actions.append(("dnsmasq-restore", lambda: _run(["systemctl", "start", "dnsmasq"], quiet=True)))
+    if _dnsmasq_was_running:
+        _cleanup_actions.append(("dnsmasq-restore", lambda: _run(["systemctl", "start", "dnsmasq"], quiet=True)))
 
     # Detect actual IP assigned to wlan0 by NetworkManager
     _ip_r = subprocess.run(["nmcli", "-g", "IP4.ADDRESS", "dev", "show", "wlan0"],
