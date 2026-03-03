@@ -110,26 +110,35 @@ def start_hotspot(config: dict):
         "802-11-wireless.band", "bg",
         "802-11-wireless.channel", "6",
         "ipv4.method", "shared",              # NM runs its own DHCP + DNS
-        "ipv4.addresses", "192.168.4.1/24",
     ])
     if r.returncode != 0:
         print("❌  Failed to create hotspot connection")
         return
+
+    # Stop system dnsmasq so NetworkManager's internal DHCP can bind to port 67
+    _run(["systemctl", "stop", "dnsmasq"], quiet=True)
 
     # Bring it up
     r = _run(["nmcli", "con", "up", CON_NAME])
     if r.returncode != 0:
         print("❌  Failed to activate hotspot")
         _run(["nmcli", "con", "delete", CON_NAME], quiet=True)
+        _run(["systemctl", "start", "dnsmasq"], quiet=True)
         return
 
-    # Register cleanup: tear down hotspot on exit
+    # Register cleanup: tear down hotspot on exit, restart system dnsmasq
     _cleanup_actions.append(("hotspot", lambda: (
         _run(["nmcli", "con", "down", CON_NAME], quiet=True),
         _run(["nmcli", "con", "delete", CON_NAME], quiet=True),
     )))
+    _cleanup_actions.append(("dnsmasq-restore", lambda: _run(["systemctl", "start", "dnsmasq"], quiet=True)))
 
-    print(f"✅  Hotspot active — SSID: {ssid}")
+    # Detect actual IP assigned to wlan0 by NetworkManager
+    _ip_r = subprocess.run(["nmcli", "-g", "IP4.ADDRESS", "dev", "show", "wlan0"],
+                           capture_output=True, text=True)
+    ap_ip = (_ip_r.stdout.strip().split("/")[0] or "192.168.4.1") if _ip_r.returncode == 0 else "192.168.4.1"
+
+    print(f"✅  Hotspot active — SSID: {ssid}  |  AP IP: {ap_ip}")
 
     # ── Captive portal via nftables ───────────────────────────────
     if mode == "captive_portal":
@@ -145,7 +154,7 @@ table ip derby_captive {{
         type nat hook prerouting priority dstnat; policy accept;
         iifname "wlan0" tcp dport 80 redirect to :{port}
         iifname "wlan0" tcp dport 443 redirect to :{port}
-        iifname "wlan0" udp dport 53 dnat to 192.168.4.1:53
+        iifname "wlan0" udp dport 53 dnat to {ap_ip}:53
     }}
 }}
 """
@@ -160,7 +169,7 @@ table ip derby_captive {{
                 print("⚠️   Failed to set up captive portal nftables rules")
 
     if mode != "captive_portal":
-        print(f"    Connect to '{ssid}', then open: http://192.168.4.1:{port}")
+        print(f"    Connect to '{ssid}', then open: http://{ap_ip}:{port}")
 
 
 def setup_mdns(config: dict):

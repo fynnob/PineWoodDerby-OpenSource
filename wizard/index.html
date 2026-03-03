@@ -136,8 +136,8 @@
     <h2>Where will the race data live?</h2>
     <p class="sub">The backend stores all your cars, heats, and results. Pick based on your setup.</p>
     <div class="cards">
-      <div class="card" id="card-supabase" onclick="pick('backend','supabase',this)">
-        <span class="badge">Cloud</span>
+      <div class="card selected" id="card-supabase" onclick="pick('backend','supabase',this)">
+        <span class="badge">Recommended</span>
         <h3>☁️ Supabase</h3>
         <ul class="pros">
           <li>Free tier available</li>
@@ -209,7 +209,7 @@
       <strong>Recommended:</strong> Switch to <em>Local frontend</em> when using a local backend.
     </div>
     <div class="cards">
-      <div class="card" id="card-github_pages" onclick="pick('frontend','github_pages',this)">
+      <div class="card selected" id="card-github_pages" onclick="pick('frontend','github_pages',this)">
         <span class="badge">Cloud</span>
         <h3>🌐 GitHub Pages</h3>
         <ul class="pros">
@@ -243,7 +243,7 @@
     <h2>How will race results be recorded?</h2>
     <p class="sub">Choose how finish order is captured — manually by officials, or automatically by sensors.</p>
     <div class="cards">
-      <div class="card" id="card-heat" onclick="pick('scoring','heat',this)">
+      <div class="card selected" id="card-heat" onclick="pick('scoring','heat',this)">
         <span class="badge">Manual</span>
         <h3>📋 Heat / Round System</h3>
         <ul class="pros">
@@ -428,9 +428,9 @@ const TOTAL   = 5;
 let   current = 1;
 
 const state = {
-  backend:  null,
-  frontend: null,
-  scoring:  null,
+  backend:  'supabase',
+  frontend: 'github_pages',
+  scoring:  'heat',
   hotspot:  "off",
 };
 
@@ -604,6 +604,10 @@ async function finish() {
 
 // Init
 renderGpioPins(4);
+// Apply default selections so dependent UI panels show correctly from the start
+pick('backend',  'supabase',      document.getElementById('card-supabase'));
+pick('frontend', 'github_pages',  document.getElementById('card-github_pages'));
+pick('scoring',  'heat',          document.getElementById('card-heat'));
 gotoStep(1);
 </script>
 </body>

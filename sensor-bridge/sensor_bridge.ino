@@ -29,13 +29,20 @@
 const char* WIFI_SSID     = "DerbyNet";           // Hotspot SSID (run.py creates this)
 const char* WIFI_PASSWORD = "derbyrace";           // Hotspot password
 
-// Server URL  — use local IP or hostname if mDNS is not available
-// e.g. "http://192.168.4.1:8000" or "http://derby.local:8000"
-// For Supabase: "https://xxxxx.supabase.co/functions/v1"
-const char* SERVER_BASE   = "http://192.168.4.1:8000";
+// ── Backend mode — uncomment exactly ONE ─────────────────────────
+// local → POST to FastAPI running on the Raspberry Pi (default)
+// cloud → POST directly to Supabase REST API  (sensor_hits table)
+#define BACKEND_MODE_LOCAL    //  ← keep this for Pi/local server
+//#define BACKEND_MODE_CLOUD  //  ← switch to this for Supabase cloud
 
-// Endpoint path: /api/sensor/hit  (FastAPI) or /sensor-hit (Supabase Function)
+// Local backend config (BACKEND_MODE_LOCAL only):
+// e.g. "http://192.168.4.1:8000" or "http://derby.local:8000"
+const char* SERVER_BASE   = "http://192.168.4.1:8000";
 const char* HIT_PATH      = "/api/sensor/hit";
+
+// Supabase cloud config (BACKEND_MODE_CLOUD only):
+const char* SUPABASE_URL      = "https://YOURPROJECT.supabase.co";
+const char* SUPABASE_ANON_KEY = "YOUR_ANON_KEY_HERE";
 
 // Number of lanes
 const int   NUM_LANES     = 4;
@@ -133,24 +140,43 @@ void connectWifi() {
 // ── HTTP POST ─────────────────────────────────────────────────────
 void postHit(int lane, unsigned long time_ms) {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("[HTTP] Not connected — queuing would be needed. Lane %d time %lums dropped.\n",
-                  lane, time_ms);
+    Serial.printf("[HTTP] Not connected — lane %d time %lums dropped.\n", lane, time_ms);
     return;
   }
 
+  StaticJsonDocument<128> doc;
+  String body;
+
+#ifdef BACKEND_MODE_CLOUD
+  // ── Supabase REST API: POST /rest/v1/sensor_hits ──────────────
+  String url = String(SUPABASE_URL) + "/rest/v1/sensor_hits";
+  doc["lane"]    = lane;
+  doc["time_ms"] = (float)time_ms;
+  serializeJson(doc, body);
+
+  HTTPClient http;
+  http.begin(url);
+  http.addHeader("Content-Type",  "application/json");
+  http.addHeader("apikey",        SUPABASE_ANON_KEY);
+  http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
+  http.addHeader("Prefer",        "return=minimal");
+
+  Serial.printf("[HTTP] POST (cloud) lane=%d time_ms=%lu  →  %s\n", lane, time_ms, url.c_str());
+  int code = http.POST(body);
+#else
+  // ── Local FastAPI: POST /api/sensor/hit ───────────────────────
   String url = String(SERVER_BASE) + HIT_PATH;
+  doc["lane"]    = lane;
+  doc["time_ms"] = (int)time_ms;
+  serializeJson(doc, body);
+
   HTTPClient http;
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
-  StaticJsonDocument<128> doc;
-  doc["lane"]    = lane;
-  doc["time_ms"] = (int)time_ms;
-  String body;
-  serializeJson(doc, body);
-
-  Serial.printf("[HTTP] POST lane=%d time_ms=%lu  →  %s\n", lane, time_ms, url.c_str());
+  Serial.printf("[HTTP] POST (local) lane=%d time_ms=%lu  →  %s\n", lane, time_ms, url.c_str());
   int code = http.POST(body);
+#endif
 
   if (code > 0) {
     Serial.printf("[HTTP] Response: %d %s\n", code, http.getString().c_str());

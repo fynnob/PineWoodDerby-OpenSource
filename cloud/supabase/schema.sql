@@ -184,3 +184,22 @@ CREATE POLICY "anon_upload" ON storage.objects
 CREATE POLICY "anon_read" ON storage.objects
   FOR SELECT TO anon
   USING (bucket_id = 'car-images');
+
+-- ── Sensor Hits (ESP32 sensor bridge in cloud mode) ───────────────
+-- Raw timing events pushed directly from the ESP32 via Supabase REST API.
+-- The backend scoring module can consume these to build heat results.
+CREATE TABLE IF NOT EXISTS sensor_hits (
+  id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  lane       INTEGER     NOT NULL,
+  time_ms    REAL        NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE sensor_hits ENABLE ROW LEVEL SECURITY;
+
+-- Anon ESP32 devices may insert hits; anyone (scorers) may read them
+CREATE POLICY "anon_insert_sensor_hits" ON sensor_hits
+  FOR INSERT TO anon WITH CHECK (true);
+
+CREATE POLICY "anon_read_sensor_hits" ON sensor_hits
+  FOR SELECT TO anon USING (true);
