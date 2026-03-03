@@ -4,7 +4,6 @@ Pinewood Derby OpenSource — Race Server Launcher
 Reads config.json and starts the correct combination of modules.
 
 Usage: python3 run.py
-       sudo python3 run.py   (required for WiFi hotspot features)
 """
 import json, sys, os, asyncio, subprocess, webbrowser, threading
 from pathlib import Path
@@ -42,7 +41,27 @@ def start_hotspot(config: dict):
     port = config.get("local_port", 8080)
 
     if os.geteuid() != 0:
-        print("⚠️   Hotspot requires root. Run with: sudo python3 run.py")
+        # Try to re-exec with sudo so user-installed packages remain visible.
+        # Inject user site-packages into PYTHONPATH so root can find them.
+        import site
+        user_site = site.getusersitepackages()
+        env = os.environ.copy()
+        existing = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{user_site}:{existing}" if existing else user_site
+        print("📡  Hotspot requested — re-launching as root (Ctrl+C to cancel)...")
+        try:
+            result = subprocess.run(
+                ["sudo", "-E", sys.executable] + sys.argv,
+                check=False, env=env
+            )
+            if result.returncode == 0:
+                sys.exit(0)
+            # sudo failed (e.g. wrong password, not in sudoers) — fall through
+            print("⚠️   sudo failed (rc=%d). Hotspot disabled — continuing without it." % result.returncode)
+        except FileNotFoundError:
+            print("⚠️   sudo not available. Hotspot disabled — continuing without it.")
+        except KeyboardInterrupt:
+            sys.exit(0)
         return
 
     print(f"📡  Starting WiFi hotspot '{ssid}'...")
