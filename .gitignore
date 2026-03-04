@@ -1,5 +1,6 @@
-# Generated config (write your own via setup.py)
+# Generated config — contains credentials/URLs, never commit
 config.json
+frontend/config.js
 
 # Uploaded files (runtime data)
 uploads/
