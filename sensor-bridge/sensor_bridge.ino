@@ -65,8 +65,9 @@ const unsigned long DEBOUNCE_MS = 500;
 const unsigned long AUTO_RESET_MS = 30000;
 
 // ── State ─────────────────────────────────────────────────────────
-volatile unsigned long gateOpenAt    = 0;    // millis() when gate opened
-volatile bool          raceActive    = false;
+volatile unsigned long gateOpenAt      = 0;    // millis() when gate opened
+volatile bool          raceActive      = false;
+volatile bool          gateEventPending = false; // loop() reads and posts
 volatile unsigned long lastHitAt[NUM_LANES]  = {};   // debounce timestamps
 volatile bool          laneHit[NUM_LANES]    = {};   // did this lane already report?
 unsigned long          resetAt = 0;
@@ -74,8 +75,9 @@ unsigned long          resetAt = 0;
 // ── ISR helpers ───────────────────────────────────────────────────
 // ISRs must be in IRAM for ESP32
 void IRAM_ATTR onGate() {
-  gateOpenAt = millis();
-  raceActive = true;
+  gateOpenAt       = millis();
+  raceActive       = true;
+  gateEventPending = true;   // signal loop() to broadcast gate-open event
   for (int i = 0; i < NUM_LANES; i++) {
     lastHitAt[i] = 0;
     laneHit[i]   = false;
@@ -217,12 +219,57 @@ void setup() {
   Serial.println("[Ready] Waiting for gate to open...");
 }
 
-// ── Loop ──────────────────────────────────────────────────────────
+// ── Gate event POST ───────────────────────────────────────────
+void postGateEvent(const char* state) {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  StaticJsonDocument<64> doc;
+  doc["state"] = state;
+  String body;
+  serializeJson(doc, body);
+
+  HTTPClient http;
+  int code = -1;
+
+#ifdef BACKEND_MODE_CLOUD
+  String url = String(SUPABASE_URL) + "/realtime/v1/api/broadcast";
+  StaticJsonDocument<256> msg;
+  JsonArray messages = msg.createNestedArray("messages");
+  JsonObject m = messages.createNestedObject();
+  m["topic"] = "realtime:gate";
+  m["event"] = "gate_event";
+  JsonObject payload = m.createNestedObject("payload");
+  payload["state"] = state;
+  String cloudBody;
+  serializeJson(msg, cloudBody);
+  http.begin(url);
+  http.addHeader("Content-Type",  "application/json");
+  http.addHeader("apikey",        SUPABASE_ANON_KEY);
+  http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
+  code = http.POST(cloudBody);
+#else
+  String url = String(SERVER_BASE) + "/api/gate";
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  code = http.POST(body);
+#endif
+
+  Serial.printf("[Gate] POST state=%s  →  %s  (%d)\n", state, url.c_str(), code);
+  http.end();
+}
+
+// ── Loop ─────────────────────────────────────────────────────
 void loop() {
   // Reconnect WiFi if dropped
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[WiFi] Reconnecting...");
     connectWifi();
+  }
+
+  // Broadcast gate-open event (set by ISR)
+  if (gateEventPending) {
+    gateEventPending = false;
+    postGateEvent("open");
   }
 
   // Drain event ring buffer

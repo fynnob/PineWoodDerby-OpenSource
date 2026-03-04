@@ -190,6 +190,22 @@ def create_app(config: dict) -> FastAPI:
     async def remove_heat_result(heat_id: str):
         db.delete_heat_result(heat_id)
         await broadcast("heat_results", "DELETE", {"heat_id": heat_id})
+
+    # ── Gate event (no DB write — instant WS broadcast) ──────────────
+    @app.post("/api/gate")
+    async def gate_event(body: dict):
+        """
+        Called by the gate_broadcaster ESP32 or sensor bridge when the
+        starting gate opens/closes.  No database write — this is a
+        pure in-memory signal so the frontend can show 'RACE STARTED'.
+        Also arms the sensor scoring timer so time_ms offset is correct
+        when no gate pin is wired directly to the Pi.
+        """
+        state = body.get("state", "open")   # "open" | "closed"
+        if state == "open" and sensor_scoring and hasattr(sensor_scoring, "arm"):
+            sensor_scoring.arm()
+        await broadcast("gate", "UPDATE", {"state": state})
+        return {"ok": True, "state": state}
         return {"ok": True}
 
     # ── Race state ───────────────────────────────────────────────

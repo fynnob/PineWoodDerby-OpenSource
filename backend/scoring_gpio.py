@@ -22,6 +22,9 @@ class GPIOScoring(SensorScoring):
     def __init__(self, config: dict, broadcast_fn):
         super().__init__(config, broadcast_fn)
         self.lane_pins: list[int] = config.get("lane_pins", [17, 27, 22, 23])
+        # gate_pin: BCM GPIO pin wired to the starting gate switch.
+        # Set to -1 (default) to disable; gate is then armed via /api/gate HTTP POST.
+        self.gate_pin: int = config.get("gate_pin", -1)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._gpio = None
@@ -41,6 +44,16 @@ class GPIOScoring(SensorScoring):
         GPIO.setmode(GPIO.BCM)
         GPIO.setwarnings(False)
 
+        # Gate pin — arms the race timer when the starting gate opens
+        if self.gate_pin >= 0:
+            GPIO.setup(self.gate_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+            GPIO.add_event_detect(self.gate_pin, GPIO.FALLING,
+                                  callback=lambda ch: self._on_gate(),
+                                  bouncetime=80)
+            print(f"[GPIO] Gate sensor on pin {self.gate_pin}")
+        else:
+            print("[GPIO] No gate pin configured — arm via /api/gate or call arm() manually")
+
         for lane_num, pin in enumerate(self.lane_pins, start=1):
             GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
             # Capture lane_num in closure
@@ -52,12 +65,22 @@ class GPIOScoring(SensorScoring):
                                   callback=make_callback(lane_num, pin),
                                   bouncetime=50)
 
-        print(f"[GPIO] Listening on pins: {dict(enumerate(self.lane_pins, 1))}")
+        print(f"[GPIO] Listening on lane pins: {dict(enumerate(self.lane_pins, 1))}")
 
     def arm(self):
-        """Call just before a heat starts to zero the timer."""
+        """Zero the race timer. Called by gate ISR or externally via /api/gate."""
         self._race_start_time = time.monotonic()
         print("[GPIO] Race armed — waiting for sensor hits")
+
+    def _on_gate(self):
+        """GPIO interrupt handler for the gate pin."""
+        self.arm()
+        print(f"[GPIO] Gate opened — race timer zeroed")
+        # Broadcast gate event to frontends via WebSocket
+        if self._loop:
+            asyncio.run_coroutine_threadsafe(
+                self.broadcast("gate", "UPDATE", {"state": "open"}), self._loop
+            )
 
     def _on_sensor(self, lane: int):
         """Called from GPIO interrupt thread when a sensor fires."""

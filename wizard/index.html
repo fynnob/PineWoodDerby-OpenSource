@@ -281,10 +281,17 @@
 
     <!-- GPIO pin config -->
     <div id="gpio-fields" style="display:none;">
-      <div class="field" style="max-width:200px;margin-bottom:16px;">
-        <label>Number of GPIO lanes</label>
-        <input id="gpio_lane_count" type="number" min="1" max="16" value="4"
-               oninput="renderGpioPins(this.value)" />
+      <div class="fields-grid" style="margin-bottom:16px;">
+        <div class="field" style="max-width:200px;">
+          <label>Number of GPIO lanes</label>
+          <input id="gpio_lane_count" type="number" min="1" max="16" value="4"
+                 oninput="renderGpioPins(this.value)" />
+        </div>
+        <div class="field" style="max-width:200px;">
+          <label>Start gate GPIO pin (BCM)</label>
+          <input id="gpio_gate_pin" type="number" value="" placeholder="e.g. 12 — leave blank if none" />
+          <p class="field-hint">Wired to your starting gate switch. Arms the race timer on gate open. Leave blank to arm via the gate broadcaster ESP32 or manually.</p>
+        </div>
       </div>
       <div id="gpio-pin-rows" class="fields-grid">
         <!-- rendered by renderGpioPins() -->
@@ -458,6 +465,8 @@ function prefill(cfg) {
   });
   const nl = document.getElementById('num_lanes');
   if (nl && cfg.num_lanes) nl.value = cfg.num_lanes;
+  const gateEl = document.getElementById('gpio_gate_pin');
+  if (gateEl && cfg.gate_pin != null && cfg.gate_pin >= 0) gateEl.value = cfg.gate_pin;
 }
 
 function pick(group, value, card) {
@@ -580,6 +589,9 @@ async function finish() {
       return el ? (parseInt(el.value) || DEFAULT_PINS[i] || 0) : (DEFAULT_PINS[i] || 0);
     });
     cfg.num_lanes = gpioN;   // keep num_lanes consistent with pin count
+    const gateEl = document.getElementById('gpio_gate_pin');
+    const gateVal = gateEl ? parseInt(gateEl.value) : NaN;
+    cfg.gate_pin = isNaN(gateVal) ? -1 : gateVal;
   }
 
   try {
