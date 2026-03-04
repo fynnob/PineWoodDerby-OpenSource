@@ -63,7 +63,7 @@ def start_hotspot(config: dict):
     if mode == "off":
         return
     ssid = config.get("hotspot_ssid", "PinewoodDerby")
-    port = config.get("local_port", 8080)
+    port = config.get("local_port", 80)
 
     if os.geteuid() != 0:
         # Re-exec with sudo, injecting user site-packages so deps are found
@@ -168,19 +168,27 @@ def start_hotspot(config: dict):
 
     print(f"✅  Hotspot active — SSID: {ssid}  |  AP IP: {ap_ip}")
 
-    # ── Captive portal via nftables ───────────────────────────────
+    # ── Captive portal via nftables + DNS hijack ────────────────
     if mode == "captive_portal":
+        # DNS hijack: write address=/#/<ap_ip> into NM's dnsmasq conf dir so
+        # every domain (derby.com, scouts.com, anything) resolves to this Pi.
+        dns_conf_dir = Path("/etc/NetworkManager/dnsmasq-shared.d")
+        dns_conf_dir.mkdir(parents=True, exist_ok=True)
+        dns_conf = dns_conf_dir / "derby-captive.conf"
+        dns_conf.write_text(f"address=/#/{ap_ip}\n")
+        _cleanup_actions.append(("dns-hijack-conf", lambda: dns_conf.unlink(missing_ok=True)))
+        # Reload dnsmasq so it picks up the new directive
+        subprocess.run(["pkill", "-HUP", "-x", "dnsmasq"], capture_output=True)
+
         if not shutil.which("nft"):
-            print("⚠️   nft (nftables) not found — captive portal disabled")
+            print("⚠️   nft (nftables) not found — captive portal HTTP redirect disabled")
         else:
-            # DNS redirect: force all DNS queries to our dnsmasq (192.168.4.1)
-            # HTTP redirect: redirect port 80 → race server port
-            # HTTPS redirect: redirect port 443 → race server port
+            # Redirect HTTPS → HTTP server port (HTTP is already on the right port)
+            # Redirect DNS → our dnsmasq (in case device ignores DHCP-offered DNS)
             nft_rules = f"""
 table ip derby_captive {{
     chain prerouting {{
         type nat hook prerouting priority dstnat; policy accept;
-        iifname "wlan0" tcp dport 80 redirect to :{port}
         iifname "wlan0" tcp dport 443 redirect to :{port}
         iifname "wlan0" udp dport 53 dnat to {ap_ip}:53
     }}
@@ -192,7 +200,7 @@ table ip derby_captive {{
                 _cleanup_actions.append(("captive-portal", lambda: (
                     _run(["nft", "delete", "table", "ip", "derby_captive"], quiet=True),
                 )))
-                print(f"✅  Captive portal active — devices will auto-redirect to the race app")
+                print(f"✅  Captive portal active — type any URL (e.g. derby.com) in your browser")
             else:
                 print("⚠️   Failed to set up captive portal nftables rules")
 
@@ -202,7 +210,7 @@ table ip derby_captive {{
 
 def setup_mdns(config: dict):
     """Advertise derby.local via avahi (mDNS) so hostname works on LAN."""
-    port = config.get("local_port", 8080)
+    port = config.get("local_port", 80)
     service_xml = f"""<?xml version="1.0" standalone='no'?>
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <service-group>
@@ -221,7 +229,7 @@ def setup_mdns(config: dict):
             svc_path.unlink(missing_ok=True),
             subprocess.run(["systemctl", "restart", "avahi-daemon"], capture_output=True),
         )))
-        print(f"✅  mDNS: reachable at http://derby.local:{port}")
+        print(f"✅  mDNS advertised (http://derby.local:{port}) — note: mDNS may not work on all devices")
     except Exception:
         pass  # avahi not available, skip silently
 
@@ -258,7 +266,7 @@ def main():
     backend_mode = config.get("backend_mode", "supabase")
     scoring_mode = config.get("scoring_mode", "heat")
     frontend_mode = config.get("frontend_mode", "local")
-    port = config.get("local_port", 8080)
+    port = config.get("local_port", 80)
     host = config.get("local_host", "0.0.0.0")
 
     print(f"\n🏎️   Pinewood Derby — Race Server")

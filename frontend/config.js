@@ -2,10 +2,10 @@
 // Re-run setup.py to change settings
 const CONFIG = {
   backend_mode:     "local",
-  backend_url:      "http://localhost:8080",
+  backend_url:      "http://192.168.178.48:80",
   anon_key:         "",
   scoring_mode:     "heat",
-  num_lanes:        8,
+  num_lanes:        4,
   track_name:       "Pinewood Derby",
   admin_pin:        "2468",
   settings_pin:     "1357",

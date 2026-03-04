@@ -3,7 +3,7 @@
 # Usage: bash test_api.sh
 set -euo pipefail
 
-B="http://localhost:8080/api"
+B="http://localhost:80/api"
 PASS=0; FAIL=0
 
 check() {

@@ -189,7 +189,7 @@
         </div>
         <div class="field">
           <label>Port</label>
-          <input id="local_port" type="number" value="8080" />
+          <input id="local_port" type="number" value="80" />
         </div>
       </div>
     </div>
@@ -307,7 +307,7 @@
         <div class="card selected" id="card-hotspot-off" onclick="pick('hotspot','off',this)">
           <h3>📶 No hotspot (use existing WiFi)</h3>
           <p class="pros" style="margin-top:8px;font-size:0.82rem;color:var(--muted);">
-            Devices connect to the existing WiFi and access the race server by IP or <code>derby.local</code>
+            Devices connect to the existing WiFi and access the race server by IP address
           </p>
         </div>
         <div class="card" id="card-hotspot-regular" onclick="pick('hotspot','regular',this)">
@@ -315,7 +315,7 @@
           <h3>📡 Regular hotspot</h3>
           <p style="margin-top:8px;font-size:0.82rem;color:var(--muted);">
             Pi broadcasts a WiFi network. Devices connect to it, then navigate to
-            <strong>derby.local</strong> or the Pi's IP address.
+            the Pi's IP address, or any URL if using captive portal mode (e.g. derby.com).
           </p>
         </div>
         <div class="card" id="card-hotspot-captive" onclick="pick('hotspot','captive_portal',this)">
@@ -563,7 +563,7 @@ async function finish() {
     supabase_url:     document.getElementById('supabase_url').value.trim(),
     supabase_anon_key:document.getElementById('supabase_anon_key').value.trim(),
     local_host:       document.getElementById('local_host').value.trim() || '0.0.0.0',
-    local_port:       parseInt(document.getElementById('local_port').value) || 8080,
+    local_port:       parseInt(document.getElementById('local_port').value) || 80,
     smtp_host:        document.getElementById('smtp_host').value.trim(),
     smtp_port:        parseInt(document.getElementById('smtp_port').value) || 587,
     smtp_user:        document.getElementById('smtp_user').value.trim(),
