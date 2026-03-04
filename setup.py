@@ -6,7 +6,8 @@ then writes config.json and frontend/config.js when submitted.
 
 Usage: python3 setup.py
 """
-import json, os, sys, socket, webbrowser, threading
+import json, os, sys, re, socket, base64, time, webbrowser, threading, tempfile, shutil, subprocess
+import urllib.request, urllib.error
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
@@ -80,6 +81,161 @@ const CONFIG = {{
     frontend_cfg.write_text(js)
     print(f"✅  Frontend config written to {frontend_cfg}")
 
+# ── Supabase schema application ───────────────────────────────────────────────
+def _apply_supabase_schema(cfg: dict) -> dict:
+    """Connect to Supabase PostgreSQL (direct connection) and run schema.sql."""
+    try:
+        import psycopg2
+    except ImportError:
+        return {
+            'ok': False,
+            'error': 'psycopg2 not installed.',
+            'hint': 'pip install psycopg2-binary',
+        }
+    url      = cfg.get('supabase_url', '').strip()
+    password = cfg.get('supabase_db_password', '').strip()
+    if not url or not password:
+        return {'ok': False, 'error': 'Supabase URL and DB password are required.'}
+    m = re.match(r'https://([a-zA-Z0-9_-]+)\.supabase\.co', url)
+    if not m:
+        return {'ok': False, 'error': 'Could not parse project ref from Supabase URL.'}
+    ref        = m.group(1)
+    schema_sql = (ROOT / 'cloud' / 'supabase' / 'schema.sql').read_text()
+    try:
+        conn = psycopg2.connect(
+            host=f'db.{ref}.supabase.co', port=5432, dbname='postgres',
+            user='postgres', password=password,
+            sslmode='require', connect_timeout=20,
+        )
+        conn.autocommit = True
+        conn.cursor().execute(schema_sql)
+        conn.close()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
+# ── GitHub helpers ──────────────────────────────────────────────────────────
+def _github_api(path: str, token: str, method: str = 'GET', body=None):
+    """Thin GitHub REST API wrapper using stdlib only."""
+    req = urllib.request.Request(
+        f'https://api.github.com{path}',
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={
+            'Authorization': f'token {token}',
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'PinewoodDerby-Setup/1.0',
+        },
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.loads(r.read().decode()), r.status
+    except urllib.error.HTTPError as e:
+        try:    body_data = json.loads(e.read().decode())
+        except Exception: body_data = {}
+        return body_data, e.code
+
+
+def _setup_github_pages(cfg: dict) -> dict:
+    """Create a GitHub repo and push the frontend. Returns the Pages URL."""
+    repo_full = cfg.get('github_repo', '').strip().strip('/')
+    token     = cfg.get('github_token', '').strip()
+    if not token:
+        return {'ok': False, 'error': 'GitHub Personal Access Token is required.'}
+
+    # Auto-detect username if only the repo name was given
+    if '/' not in repo_full:
+        if not repo_full:
+            return {'ok': False, 'error': 'Repository name is required.'}
+        user_data, code = _github_api('/user', token)
+        if code != 200:
+            return {'ok': False, 'error': f"Could not fetch GitHub username ({code}): {user_data.get('message', '')}"}
+        repo_full = f"{user_data['login']}/{repo_full}"
+        cfg['github_repo'] = repo_full
+        CONFIG_OUT.write_text(json.dumps(cfg, indent=2))
+
+    owner, repo_name = repo_full.split('/', 1)
+
+    # Create repo (422 = already exists — that's fine)
+    data, code = _github_api('/user/repos', token, 'POST', {
+        'name': repo_name,
+        'description': 'Pinewood Derby Race App — github.com/fynnob/PineWoodDerby-OpenSource',
+        'private': False,
+        'auto_init': False,
+    })
+    if code not in (201, 422):
+        return {'ok': False, 'error': f"Create repo failed ({code}): {data.get('message', data)}"}
+
+    # Generate frontend/config.js with the current settings (Supabase keys etc.)
+    _write_frontend_config(cfg)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Copy frontend directory contents to the temp root
+        frontend_dir = ROOT / 'frontend'
+        for item in frontend_dir.iterdir():
+            dst = os.path.join(tmpdir, item.name)
+            if item.is_dir():
+                shutil.copytree(str(item), dst)
+            else:
+                shutil.copy2(str(item), dst)
+
+        auth_url = f'https://x-access-token:{token}@github.com/{owner}/{repo_name}.git'
+        git_env  = {
+            **os.environ,
+            'GIT_AUTHOR_NAME':    'Pinewood Derby',
+            'GIT_AUTHOR_EMAIL':   'setup@derby.local',
+            'GIT_COMMITTER_NAME': 'Pinewood Derby',
+            'GIT_COMMITTER_EMAIL':'setup@derby.local',
+        }
+        for cmd in [
+            ['git', 'init', '-b', 'main'],
+            ['git', 'config', 'user.email', 'setup@derby.local'],
+            ['git', 'config', 'user.name',  'Pinewood Derby'],
+            ['git', 'add', '.'],
+            ['git', 'commit', '-m', 'Deploy: Pinewood Derby frontend'],
+            ['git', 'remote', 'add', 'origin', auth_url],
+            ['git', 'push', '-u', 'origin', 'main', '--force'],
+        ]:
+            r = subprocess.run(cmd, capture_output=True, text=True, cwd=tmpdir, env=git_env)
+            if r.returncode != 0:
+                return {'ok': False,
+                        'error': f'`{" ".join(cmd[:3])}` failed: {(r.stderr or r.stdout).strip()}'}
+
+    return {
+        'ok': True,
+        'pages_url':    f'https://{owner}.github.io/{repo_name}/',
+        'settings_url': f'https://github.com/{owner}/{repo_name}/settings/pages',
+        'repo_url':     f'https://github.com/{owner}/{repo_name}',
+        'owner': owner, 'repo': repo_name,
+    }
+
+
+def _trigger_deploy(cfg: dict) -> dict:
+    """Push a small commit via the GitHub Contents API to trigger a Pages build."""
+    token     = cfg.get('github_token', '').strip()
+    repo_full = cfg.get('github_repo', '').strip()
+    if not token or '/' not in repo_full:
+        return {'ok': False, 'error': 'Missing token or repo.'}
+    owner, repo = repo_full.split('/', 1)
+
+    filepath    = '.deploy'
+    content_b64 = base64.b64encode(f'deployed: {int(time.time())}\n'.encode()).decode()
+
+    existing, code = _github_api(f'/repos/{owner}/{repo}/contents/{filepath}', token)
+    body: dict = {
+        'message': 'chore: trigger GitHub Pages first build',
+        'content': content_b64,
+        'committer': {'name': 'Pinewood Derby Setup', 'email': 'setup@derby.local'},
+    }
+    if code == 200:
+        body['sha'] = existing.get('sha', '')
+
+    data, code = _github_api(f'/repos/{owner}/{repo}/contents/{filepath}', token, 'PUT', body)
+    if code in (200, 201):
+        return {'ok': True}
+    return {'ok': False, 'error': f"Trigger failed ({code}): {data.get('message', '')}"}
 
 class WizardHandler(BaseHTTPRequestHandler):
     _done = threading.Event()
@@ -94,24 +250,59 @@ class WizardHandler(BaseHTTPRequestHandler):
         elif path.startswith("/wizard/"):
             fname = path.lstrip("/wizard/")
             self._serve_file(WIZARD_DIR / fname, "text/javascript")
+        elif path == "/api/existing-config":
+            if CONFIG_OUT.exists():
+                self._serve_file(CONFIG_OUT, "application/json")
+            else:
+                self.send_response(404); self.end_headers()
         else:
             self.send_response(404); self.end_headers()
 
+    def _read_body(self) -> bytes:
+        return self.rfile.read(int(self.headers.get("Content-Length", 0)))
+
+    def _reply_json(self, obj: dict, status: int = 200):
+        body = json.dumps(obj).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
-        if urlparse(self.path).path == "/api/setup":
-            length = int(self.headers.get("Content-Length", 0))
-            body   = self.rfile.read(length)
-            data   = json.loads(body)
+        path = urlparse(self.path).path
+
+        if path == "/api/setup":
+            data = json.loads(self._read_body())
             write_config(data)
+            self._reply_json({"ok": True})
+            # Keep server alive — user still needs post-setup steps.
+            # A 10-minute fallback closes it if the browser is abandoned.
+            threading.Timer(600, WizardHandler._done.set).start()
 
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(b'{"ok": true}')
+        elif path == "/api/apply-supabase-schema":
+            if CONFIG_OUT.exists():
+                self._reply_json(_apply_supabase_schema(json.loads(CONFIG_OUT.read_text())))
+            else:
+                self._reply_json({"ok": False, "error": "config.json not found"})
 
-            # Stop the server after a short delay so response is sent
-            threading.Timer(0.5, lambda: WizardHandler._done.set()).start()
+        elif path == "/api/setup-github-pages":
+            if CONFIG_OUT.exists():
+                self._reply_json(_setup_github_pages(json.loads(CONFIG_OUT.read_text())))
+            else:
+                self._reply_json({"ok": False, "error": "config.json not found"})
+
+        elif path == "/api/trigger-github-pages-deploy":
+            if CONFIG_OUT.exists():
+                self._reply_json(_trigger_deploy(json.loads(CONFIG_OUT.read_text())))
+            else:
+                self._reply_json({"ok": False, "error": "config.json not found"})
+
+        elif path == "/api/wizard-done":
+            self._reply_json({"ok": True})
+            threading.Timer(0.5, WizardHandler._done.set).start()
+
         else:
             self.send_response(404); self.end_headers()
 

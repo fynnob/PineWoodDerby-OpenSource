@@ -178,6 +178,11 @@
           <input id="supabase_anon_key" type="text" placeholder="eyJhbGci..." />
         </div>
       </div>
+      <div class="field" style="max-width:480px;margin-top:4px;">
+        <label>Database Password <span style="font-weight:400;color:var(--muted)">(for auto-setup)</span></label>
+        <input id="supabase_db_password" type="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" />
+        <p class="field-hint">Used once to apply the SQL schema automatically. Stored in local config only &mdash; never committed to git.</p>
+      </div>
     </div>
     <!-- Local fields -->
     <div id="local-fields" style="display:none;">
@@ -234,6 +239,22 @@
           <li>Python server must be running</li>
           <li>Only accessible on local network</li>
         </ul>
+      </div>
+    </div>
+
+    <!-- GitHub Pages setup fields (shown when GitHub Pages card is selected) -->
+    <div id="github-pages-fields" style="display:none;margin-top:16px;">
+      <div class="fields-grid">
+        <div class="field">
+          <label>GitHub Repository <span style="font-weight:400;color:var(--muted)">(for auto-deploy)</span></label>
+          <input id="github_repo" type="text" placeholder="username/my-derby-2026" />
+          <p class="field-hint">If entered, setup will create the repo and push your frontend automatically. Leave blank to set up manually.</p>
+        </div>
+        <div class="field">
+          <label>Personal Access Token</label>
+          <input id="github_token" type="password" placeholder="ghp_xxxxx" />
+          <p class="field-hint">Needs <strong>repo</strong> scope. <a href="https://github.com/settings/tokens/new?scopes=repo&amp;description=PinewoodDerby-Setup" target="_blank">Generate here ↗</a></p>
+        </div>
       </div>
     </div>
   </div>
@@ -405,18 +426,12 @@
     </details>
   </div>
 
-  <!-- ── Done screen ───────────────────────────────────────── -->
+  <!-- ── Post-setup / Done screen ────────────────────────────────────── -->
   <div class="panel" id="panel-done">
     <div class="done-box">
-      <div class="icon">🏁</div>
-      <h2>Setup Complete!</h2>
-      <p style="color:var(--muted);font-size:0.9rem;margin-top:8px;">
-        Your config has been saved. Start the race server with:
-      </p>
-      <code>python3 run.py</code>
-      <p style="font-size:0.82rem;color:var(--muted2);margin-top:8px;">
-        Re-run <strong>python3 setup.py</strong> at any time to change settings.
-      </p>
+      <div id="post-content" style="text-align:left;"></div>
+      <button class="btn btn-gold" id="closeWizardBtn" onclick="wizardClose()"
+              style="display:none;margin-top:24px;">&#10003; Close Wizard</button>
     </div>
   </div>
 
@@ -457,7 +472,8 @@ function prefill(cfg) {
   if (cfg.frontend_mode) pick('frontend', cfg.frontend_mode === 'local' ? 'local_frontend' : cfg.frontend_mode, document.getElementById('card-' + (cfg.frontend_mode === 'local' ? 'local_frontend' : cfg.frontend_mode)));
   if (cfg.scoring_mode)  pick('scoring', cfg.scoring_mode, document.getElementById('card-' + cfg.scoring_mode));
   if (cfg.hotspot_mode)  pick('hotspot', cfg.hotspot_mode, document.getElementById('card-hotspot-' + cfg.hotspot_mode));
-  ['supabase_url','supabase_anon_key','local_host','local_port',
+  ['supabase_url','supabase_anon_key','supabase_db_password','github_repo',
+   'local_host','local_port',
    'track_name','admin_pin','settings_pin','hotspot_ssid',
    'smtp_host','smtp_port','smtp_user','smtp_password','smtp_from_name','smtp_from_address'].forEach(id => {
     const el = document.getElementById(id);
@@ -494,7 +510,11 @@ function pick(group, value, card) {
     // Update HTTPS warning
     updateHttpsWarning();
   }
-  if (group === 'frontend') updateHttpsWarning();
+  if (group === 'frontend') {
+    const ghf = document.getElementById('github-pages-fields');
+    if (ghf) ghf.style.display = value === 'github_pages' ? 'block' : 'none';
+    updateHttpsWarning();
+  }
   if (group === 'scoring') {
     const show = value === 'sensor_gpio';
     document.getElementById('gpio-fields').style.display = show ? 'block' : 'none';
@@ -569,8 +589,11 @@ async function finish() {
     hotspot_ssid:     document.getElementById('hotspot_ssid').value.trim() || 'PinewoodDerby',
     admin_pin:        document.getElementById('admin_pin').value || '2468',
     settings_pin:     document.getElementById('settings_pin').value || '1357',
-    supabase_url:     document.getElementById('supabase_url').value.trim(),
-    supabase_anon_key:document.getElementById('supabase_anon_key').value.trim(),
+    supabase_url:          document.getElementById('supabase_url').value.trim(),
+    supabase_anon_key:     document.getElementById('supabase_anon_key').value.trim(),
+    supabase_db_password:  (document.getElementById('supabase_db_password')?.value || '').trim(),
+    github_repo:           (document.getElementById('github_repo')?.value  || '').trim(),
+    github_token:          (document.getElementById('github_token')?.value  || '').trim(),
     local_host:       document.getElementById('local_host').value.trim() || '0.0.0.0',
     local_port:       parseInt(document.getElementById('local_port').value) || 80,
     smtp_host:        document.getElementById('smtp_host').value.trim(),
@@ -608,10 +631,160 @@ async function finish() {
     document.getElementById('nav-bar').style.display = 'none';
     for (let i = 1; i <= TOTAL; i++)
       document.getElementById('step-ind-' + i).classList.add('done');
+    runPostSetup();
   } catch (e) {
     btn.disabled = false; btn.textContent = '🏁 Save & Finish';
     alert('Error saving config: ' + e.message);
   }
+}
+
+// ── Post-setup flow ───────────────────────────────────────────────────
+async function runPostSetup() {
+  const box      = document.getElementById('post-content');
+  const closeBtn = document.getElementById('closeWizardBtn');
+  box.innerHTML  = '<div style="text-align:center"><div class="icon">⏳</div><h2>Setting things up…</h2></div>';
+  let html = '';
+
+  // ── Supabase schema ─────────────────────────────────────────────────
+  if (state.backend === 'supabase') {
+    const sbUrl  = (document.getElementById('supabase_url')?.value          || '').trim();
+    const sbPass = (document.getElementById('supabase_db_password')?.value  || '').trim();
+    if (sbUrl && sbPass) {
+      box.innerHTML = '<div style="text-align:center"><div class="icon">⏳</div><h2>Applying Supabase schema…</h2><p style="color:var(--muted)">Connecting to your database…</p></div>';
+      try {
+        const r    = await fetch('/api/apply-supabase-schema', {method:'POST'});
+        const data = await r.json();
+        if (data.ok) {
+          html += `<div style="padding:16px;background:#dcfce7;border-radius:10px;margin-bottom:16px;">
+            <strong>✅ Supabase database schema applied!</strong>
+            <p style="font-size:0.84rem;color:var(--muted);margin-top:4px;">All tables, RLS policies, and functions are set up in your project.</p>
+          </div>`;
+        } else {
+          html += `<div style="padding:16px;background:#fef2f2;border-radius:10px;margin-bottom:16px;">
+            <strong>⚠️ Schema not applied automatically</strong>
+            <p style="font-size:0.84rem;color:var(--danger);margin-top:4px;">${data.error}</p>
+            ${data.hint ? `<code style="display:block;margin-top:8px;font-size:0.8rem">${data.hint}</code>` : ''}
+            <p style="font-size:0.82rem;margin-top:8px;">Apply it manually via the Supabase SQL Editor — see the deploy guide below.</p>
+          </div>`;
+        }
+      } catch (e) {
+        html += `<div style="padding:16px;background:#fef2f2;border-radius:10px;margin-bottom:16px;"><strong>⚠️ Error: ${e.message}</strong></div>`;
+      }
+    } else {
+      html += `<div style="padding:16px;background:#fef3c7;border-radius:10px;margin-bottom:16px;">
+        <strong>ℹ️ Supabase schema not applied</strong>
+        <p style="font-size:0.84rem;color:var(--muted);margin-top:4px;">No DB password entered &mdash; apply the schema manually via the SQL Editor.</p>
+      </div>`;
+    }
+    html += `<p style="margin-bottom:20px;"><a href="https://github.com/fynnob/PineWoodDerby-OpenSource/blob/main/cloud/DEPLOY.md"
+      target="_blank"
+      style="display:inline-flex;align-items:center;gap:6px;padding:10px 20px;background:var(--accent2);color:#fff;border-radius:8px;font-weight:700;text-decoration:none;">
+      📖 Full Supabase deploy guide
+    </a></p>`;
+    box.innerHTML = html;
+  }
+
+  // ── GitHub Pages ───────────────────────────────────────────────────
+  if (state.frontend === 'github_pages') {
+    const repo  = (document.getElementById('github_repo')?.value  || '').trim();
+    const token = (document.getElementById('github_token')?.value || '').trim();
+
+    if (!repo || !token) {
+      // User wants to set up GitHub Pages themselves
+      box.innerHTML += `<hr style="margin:20px 0">
+        <h2>🌐 GitHub Pages — manual setup</h2>
+        <p style="color:var(--muted);margin:8px 0 16px;">Follow the step-by-step guide to host your frontend on GitHub Pages.</p>
+        <a href="https://github.com/fynnob/PineWoodDerby-OpenSource/blob/main/githubpages/DEPLOY.md"
+           target="_blank"
+           style="display:inline-block;padding:10px 20px;background:#1a1e2e;color:#fff;border-radius:8px;font-weight:700;text-decoration:none;">
+          📖 GitHub Pages setup guide
+        </a>`;
+    } else {
+      box.innerHTML += `<hr style="margin:20px 0"><div id="gh-status" style="text-align:center"><div class="icon">⏳</div><h2>Creating GitHub repository…</h2></div>`;
+      try {
+        const r    = await fetch('/api/setup-github-pages', {method:'POST'});
+        const data = await r.json();
+        const ghDiv = document.getElementById('gh-status');
+        if (!data.ok) {
+          ghDiv.innerHTML = `<div style="padding:16px;background:#fef2f2;border-radius:10px;">
+            <strong>⚠️ GitHub Pages setup failed</strong>
+            <p style="color:var(--danger);margin-top:4px;">${data.error}</p>
+            <a href="https://github.com/fynnob/PineWoodDerby-OpenSource/blob/main/githubpages/DEPLOY.md"
+               target="_blank" style="margin-top:10px;display:inline-block;font-weight:700;">📖 Manual setup guide</a>
+          </div>`;
+        } else {
+          ghDiv.innerHTML = `
+            <div style="padding:14px;background:#dcfce7;border-radius:10px;margin-bottom:16px;">
+              <strong>✅ Repository created and code pushed!</strong><br>
+              <a href="${data.repo_url}" target="_blank" style="font-size:0.9rem;">${data.repo_url}</a>
+            </div>
+            <p>Your race app URL will be:</p>
+            <code style="display:block;margin:10px 0 20px;font-size:1rem;">${data.pages_url}</code>
+            <div style="padding:16px;background:#eff6ff;border-radius:10px;margin-bottom:20px;">
+              <strong>Now enable GitHub Pages</strong><br>
+              <p style="font-size:0.82rem;color:var(--muted);margin:6px 0 10px;">
+                Settings &rarr; Pages &rarr; Source: <em>Deploy from branch</em> &rarr; Branch: <code>main</code> &rarr; Folder: <code>/ (root)</code>
+              </p>
+              <a href="${data.settings_url}" target="_blank"
+                 style="display:inline-block;padding:10px 20px;background:var(--accent2);color:#fff;border-radius:8px;font-weight:700;text-decoration:none;">
+                ⚙️ Open GitHub Pages Settings
+              </a>
+            </div>
+            <div id="pages-confirm" style="margin-top:4px;">
+              <p style="color:var(--muted);margin-bottom:12px;">Have you enabled GitHub Pages?</p>
+              <div style="display:flex;gap:12px;justify-content:center;">
+                <button class="btn btn-primary" onclick="confirmPages('${data.owner}','${data.repo}','${data.pages_url}')">✅ Yes, I enabled it!</button>
+                <button class="btn btn-ghost" onclick="document.querySelector('#pages-confirm p').textContent='No problem &mdash; click \u2705 when ready.'">Not yet</button>
+              </div>
+            </div>`;
+        }
+      } catch (e) {
+        document.getElementById('gh-status').innerHTML =
+          `<p style="color:var(--danger);">GitHub Pages setup error: ${e.message}</p>`;
+      }
+    }
+  }
+
+  // ── Local-only mode ────────────────────────────────────────────────
+  if (state.backend !== 'supabase' && state.frontend !== 'github_pages') {
+    box.innerHTML = `<div style="text-align:center">
+      <div class="icon">🏁</div>
+      <h2>Setup Complete!</h2>
+      <p style="color:var(--muted);font-size:0.9rem;margin-top:8px;">Start the race server with:</p>
+      <code>python3 run.py</code>
+      <p style="font-size:0.82rem;color:var(--muted2);margin-top:8px;">
+        Re-run <strong>python3 setup.py</strong> at any time to change settings.
+      </p>
+    </div>`;
+  }
+
+  closeBtn.style.display = 'inline-block';
+}
+
+async function confirmPages(owner, repo, pagesUrl) {
+  const el = document.getElementById('pages-confirm');
+  el.innerHTML = '<p style="color:var(--muted)">⏳ Making a trigger commit to start first GitHub Pages build…</p>';
+  try {
+    const r    = await fetch('/api/trigger-github-pages-deploy', {method:'POST'});
+    const data = await r.json();
+    if (data.ok) {
+      el.innerHTML = `<div style="padding:14px;background:#dcfce7;border-radius:10px;margin-top:8px;">
+        <strong>✅ GitHub Pages build triggered!</strong><br>
+        <p style="font-size:0.84rem;color:var(--muted);margin-top:4px;">It will be live in ~60 seconds at:</p>
+        <a href="${pagesUrl}" target="_blank" style="font-weight:700;">${pagesUrl}</a>
+      </div>`;
+    } else {
+      el.innerHTML = `<p style="color:var(--danger);">Trigger failed: ${data.error}</p>
+        <button class="btn btn-primary" style="margin-top:8px;" onclick="confirmPages('${owner}','${repo}','${pagesUrl}')">Retry</button>`;
+    }
+  } catch (e) {
+    el.innerHTML = `<p style="color:var(--danger);">Error: ${e.message}</p>`;
+  }
+}
+
+async function wizardClose() {
+  await fetch('/api/wizard-done', {method:'POST'}).catch(() => {});
+  window.close();
 }
 
 // Init
